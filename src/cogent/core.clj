@@ -40,35 +40,40 @@
 
 ;; if match found: returns list of tuples of [substitutions eclass]
 (defn ematch [egraph lhs]
-  (letfn [(match-expr [lhs expr]
+  (letfn [(match-expr* [pattern class]
+            (mapcat (partial match-expr pattern) (get-in egraph [:eclass->enodes class])))
+          (match-expr [lhs expr]
             (cond
               (and (symbol? lhs) (.startsWith (name lhs) "?"))
               [{lhs expr}]
 
               (and (seq? lhs) (seq? expr) (= (count lhs) (count expr)))
-              (->> (map match-expr lhs expr)
+              (->> (map match-expr* lhs (map (:enode->eclass egraph) expr))
                    (apply cartesian)
                    (keep (partial apply merge-disjunct)))
 
               (= lhs expr)
               [{}]))]
     (for [node (keys (:enode->eclass egraph))
-          bind (match-expr lhs node)]
-      [bind (get-in egraph [:enode->eclass node])])))
+          var-map (match-expr lhs node)]
+      [var-map (get-in egraph [:enode->eclass node])])))
 
 
 ;; returns tuple of [graph, class2]
 (defn egraph-add
   ([egraph value]
-   (egraph-add (vary-meta egraph update :next-idx inc)
-               (-> egraph meta :next-idx)
-               value))
+   (if (contains? (:enode->eclass egraph) value)
+     egraph
+     (egraph-add (vary-meta egraph update :next-idx inc)
+                 (-> egraph meta :next-idx)
+                 value)))
   ([egraph eclass value]
    (assert (int? eclass) (str "Not class  " (pr-str eclass)))
    (assert (every? sequential? (vals (:eclass->enodes egraph))))
    (if-let [old-class (get-in egraph [:enode->eclass value])]
      (if (= eclass old-class)
        egraph
+       ;; (assert false "Not happening.")
        (-> egraph
            (update :eclass->enodes dissoc old-class)
            (update-in [:eclass->enodes eclass] into
@@ -94,7 +99,9 @@
 
 
 (defn- equality-saturation-step [rewrites egraph]
- ; (println :step egraph)
+ (println :step )
+  (doseq [[k v] (sort (:eclass->enodes egraph))]
+    (println " -" k ":"  v))
   (reduce (fn [egraph [eclass value]] (egraph-add egraph eclass value))
           egraph
           (for [[lhs rhs]      rewrites
@@ -115,13 +122,11 @@
          class2 (->> (ematch egraph form2) (map second) set)]
      (println :1 form1 (ematch egraph form1))
      (println :2 form2 (ematch egraph form2))
-(or
- (and (= 1 (count class1))
-      (= class1 class2))
- (println "Not equals" form1 form2 egraph)
- false
- )
-     )))
+     (or
+      (and (= 1 (count class1))
+           (= class1 class2))
+      (println "Not equals" form1 form2 egraph)
+      false))))
 
 (defn tautology? [expression]
   (congruent? expression true))
@@ -131,7 +136,6 @@
 (defn solve [egraph form])
 
 
-#_
-(-> '(* 1 (* 3 (* 1 0)))
-    (equality-saturation rules/rules)
-    (println))
+#_(-> '(* 1 (* 3 (* 1 0)))
+      (equality-saturation rules/rules)
+      (println))

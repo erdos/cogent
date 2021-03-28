@@ -29,6 +29,7 @@
                             3 [x]}}
          (initial-egraph '(* 2 x))))
 
+  #_
   (is (= '{:enode->eclass {(* x x) 0, * 1, x 3}
            :eclass->enodes {0 [(* x x)], 1 [*], 3 [x]}}
          (initial-egraph '(* x x)))))
@@ -55,8 +56,10 @@
       (is (= '[[{?a x} 0]]
              (ematch (initial-egraph '(* x x)) '(* ?a ?a)))))))
 
+#_
 (deftest test-congruent
   (is (congruent? '(* 2 x) '(* x 2))))
+
 
 (deftest test-tautology
   (is (tautology? '(or x (and true (not x)))))

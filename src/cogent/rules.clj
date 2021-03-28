@@ -16,6 +16,16 @@
                       [[a b] [b a]] [[a b]])]
           `(defrule ~(gensym (name rule-name)) ~a ~b))))
 
+(defrules for-tests
+;  (* ?a ?b) (* ?b ?a)
+
+  (and true ?x) ?x
+  (and ?x ?y) (and ?y ?x)
+  ;(or ?x ?y) (or ?y ?x)
+
+  )
+
+#_
 (defrules logical-operators
   (or ?a ?a)         ?a
   (or ?a ?b)         (or ?b ?a)
@@ -43,10 +53,12 @@
     (and (or ?a ?b) ?c)  <=>  (or (and ?a ?c) (and ?b ?c))
     (or (and ?a ?b) ?c) <=>  (and (or ?a ?c) (or ?b ?c)))
 
+#_
 (defrules logical-demoragan
   (not (and ?a ?b)) <=> (or (not ?a) (not ?b))
   (not (or ?a ?b))  <=> (and (not ?a) (not ?b)))
 
+#_
 (defrules basic-rewrites
   (* ?a ?b)        (* ?b ?a)
   (* 0 ?a)         0
@@ -81,6 +93,7 @@
    ;; TODO: do we need both directions?
   )
 
+#_
 (defrules equivalence-relation
   (= ?a ?a)        true               ;; reflexive
   (= ?a ?b)        (= ?b ?a)          ;; symmetric
@@ -90,6 +103,7 @@
   (= false ?a)     (not ?a)
   (not ?a)         (= false ?a))
 
+#_
 (defrules equation-simplify
   (= (+ ?a ?b) (?a ?c))   => (= ?b ?c)
   (= (- ?a ?c) (- ?b ?c)) => (= ?a ?b)
@@ -100,8 +114,8 @@
   (= 0 (* ?a ?b))         => (or (= 0 ?a) (= 0 ?b))
   (= 0 (/ ?a ?b))         => (= 0 ?a))
 
+#_
 (defrules exponentials
-
   (exp 0)                => 1
   (log 1)                => 0
   (exp (+ ?a ?b))       <=> (* (exp ?a) (exp ?b))
@@ -109,6 +123,7 @@
   (log (exp ?a))         => ?a
   (exp (log ?a))         => ?a)
 
+#_
 (defrules symbolic-differentiation
       ;; https://github.com/egraphs-good/egg/blob/main/tests/math.rs
     ;; TODO: differentiation
