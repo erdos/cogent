@@ -2,6 +2,18 @@
   (:require [clojure.test :refer :all]
             [cogent.core :refer :all]))
 
+
+(deftest test-merge-disjunct
+  (testing "Empty maps"
+    (is (= {} (merge-disjunct {} {})))
+    (is (= {:a 1} (merge-disjunct {} {:a 1}) (merge-disjunct {:a 1} {}))))
+  (testing "All intersecing entries are the"
+    (is (= {:a 1 :b 2} (merge-disjunct {:a 1} {:a 1 :b 2}))))
+  (testing "Common keys have different values"
+    (is (= nil (merge-disjunct {:a 1} {:a 2})))
+    (is (= nil (merge-disjunct {:a 1 :c 4} {:a 2 :b 3})))))
+
+
 (deftest test-initial-graph
   (is (= '{:enode->eclass {x 0}
            :eclass->enodes {0 [x]}}
