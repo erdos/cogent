@@ -23,7 +23,7 @@
   (or ?a (not ?a))   true
   (or ?a true)       true
   (or ?a false)      ?a
-  
+
   (and ?a ?a)          ?a
   (and ?a ?b)          (and ?b ?a)
   (and ?a (and ?b ?c)) (and (and ?a ?b) ?c)
@@ -33,16 +33,15 @@
 
   (not true)   false
   (not false)  true
-  (not (not ?a)) ?a
-  ;; https://github.com/egraphs-good/egg/blob/main/tests/prop.rs
-  
-    ;; associativity, distributivity
- ; (and (or ?a ?b) ?c)     (or (and ?a ?c) (and ?b ?c))
- ; (or (and ?a ?c) (and ?b ?c)) (and (or ?a ?b) ?c)
+  (not (not ?a)) ?a)
 
- ; (or (and ?a ?b) ?c)  (and (or ?a ?c) (or ?b ?c))
- ; (and (or ?a ?c) (or ?b ?c)) (or (and ?a ?b) ?c)
-  )
+  ;; https://github.com/egraphs-good/egg/blob/main/tests/prop.rs
+
+
+#_(defrules logical-distr
+  ;; distributivity
+    (and (or ?a ?b) ?c)  <=>  (or (and ?a ?c) (and ?b ?c))
+    (or (and ?a ?b) ?c) <=>  (and (or ?a ?c) (or ?b ?c)))
 
 (defrules logical-demoragan
   (not (and ?a ?b)) <=> (or (not ?a) (not ?b))
@@ -89,8 +88,7 @@
 
   (= true ?a)      ?a
   (= false ?a)     (not ?a)
-  (not ?a)         (= false ?a)
-  )
+  (not ?a)         (= false ?a))
 
 (defrules equation-simplify
   (= (+ ?a ?b) (?a ?c))   => (= ?b ?c)
@@ -98,13 +96,12 @@
 
   (= (/ ?a ?x) (/ ?b ?x)) => (= ?a ?b)
   (= (* ?a ?x) (* ?b ?x)) => (or (= 0 ?x) (= ?a ?b))
-     
+
   (= 0 (* ?a ?b))         => (or (= 0 ?a) (= 0 ?b))
-  (= 0 (/ ?a ?b))         => (= 0 ?a)
-  )
+  (= 0 (/ ?a ?b))         => (= 0 ?a))
 
 (defrules exponentials
-  
+
   (exp 0)                => 1
   (log 1)                => 0
   (exp (+ ?a ?b))       <=> (* (exp ?a) (exp ?b))
@@ -118,8 +115,7 @@
     ;; (d ?x ?x) 1 ;; if symbol
     ;; (d ?x ?x) 0 ;; f  c onstant or distinct var.
     ;; (d ?x (+ ?a ?b)) (+ (d ?x ?a) (d ?x ?b))
-  
+
   (d (+ ?a ?b)) => (+ (d ?a) (d ?b))
   (d (exp ?a))  => (exp ?a)
-  (d (log ?a))  => (/ 1 ?a)
-  )
+  (d (log ?a))  => (/ 1 ?a))

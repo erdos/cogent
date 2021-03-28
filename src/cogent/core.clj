@@ -46,7 +46,9 @@
               [{lhs expr}]
 
               (and (seq? lhs) (seq? expr) (= (count lhs) (count expr)))
-              (keep (partial apply merge-disjunct) (apply cartesian (map match-expr lhs expr)))
+              (->> (map match-expr lhs expr)
+                   (apply cartesian)
+                   (keep (partial apply merge-disjunct)))
 
               (= lhs expr)
               [{}]))]
@@ -92,33 +94,44 @@
 
 
 (defn- equality-saturation-step [rewrites egraph]
-  (println :step egraph)
+ ; (println :step egraph)
   (reduce (fn [egraph [eclass value]] (egraph-add egraph eclass value))
           egraph
           (for [[lhs rhs]      rewrites
-                [subst eclass] (ematch egraph lhs)]
+                [subst eclass] (ematch egraph lhs)
+                ;_ (println :adding lhs :=> subst)
+                ]
             [eclass (rhs-substitute rhs subst)])))
 
 
 (defn equality-saturation [expr rewrites]
   (fixpt (partial equality-saturation-step rewrites) (initial-egraph expr)))
 
-(defn congruent? [egraph form1 form2]
-  ;; get classes of both, check if these are congruent
-  (let [class1 (->> (ematch egraph form1) (map second) set)
-        class2 (->> (ematch egraph form2) (map second) set)]
-    (println :1 (ematch egraph form1))
-    (println :b (ematch egraph form2))
-    (and (= 1 (count class1))
-         (= class1 class2))))
+(defn congruent?
+  ([form1 form2]
+   (congruent? (equality-saturation form1 *rules*) form1 form2))
+  ([egraph form1 form2]
+   (let [class1 (->> (ematch egraph form1) (map second) set)
+         class2 (->> (ematch egraph form2) (map second) set)]
+     (println :1 form1 (ematch egraph form1))
+     (println :2 form2 (ematch egraph form2))
+(or
+ (and (= 1 (count class1))
+      (= class1 class2))
+ (println "Not equals" form1 form2 egraph)
+ false
+ )
+     )))
+
+(defn tautology? [expression]
+  (congruent? expression true))
+
 
 ;; return bindings for solved form
 (defn solve [egraph form])
 
-(defn tautology? [expression]
-  (congruent? (equality-saturation expression *rules*) expression true))
 
+#_
 (-> '(* 1 (* 3 (* 1 0)))
     (equality-saturation rules/rules)
     (println))
-

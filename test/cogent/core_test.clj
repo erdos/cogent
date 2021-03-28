@@ -44,9 +44,7 @@
              (ematch (initial-egraph '(* x x)) '(* ?a ?a)))))))
 
 (deftest test-congruent
-  (let [egraph (equality-saturation '(* 2 x) cogent.rules/rules)]
-    (is (congruent? egraph '(* 2 x) '(* x 2)))
-    ))
+  (is (congruent? '(* 2 x) '(* x 2))))
 
 (deftest test-tautology
   (is (tautology? '(or x (and true (not x)))))
