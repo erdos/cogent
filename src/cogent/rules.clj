@@ -17,36 +17,36 @@
           `(defrule ~(gensym (name rule-name)) ~a ~b))))
 
 (defrules logical-operators
-  (or ?a ?a)       ?a
-  (or ?a ?b)       (or ?b ?a)
+  (or ?a ?a)         ?a
+  (or ?a ?b)         (or ?b ?a)
   (or ?a (or ?b ?c)) (or (or ?a ?b) ?c)
-
-  (or ?a (not ?a)) true
-  (and ?a (not ?a)) false
+  (or ?a (not ?a))   true
+  (or ?a true)       true
+  (or ?a false)      ?a
+  
+  (and ?a ?a)          ?a
+  (and ?a ?b)          (and ?b ?a)
+  (and ?a (and ?b ?c)) (and (and ?a ?b) ?c)
+  (and ?a (not ?a))    false
+  (and ?a true)        ?a
+  (and ?a false)       false
 
   (not true)   false
   (not false)  true
   (not (not ?a)) ?a
-
-    ;; de morgan
-  (not (and ?a ?b))       (or (not ?a) (not ?b))
-  (or (not ?a) (not ?b))  (not (and ?a ?b))
-  (not (or ?a ?b))        (and (not ?a) (not ?b))
-  (and (not ?a) (not ?b)) (not (or ?a ?b))
-
-    ;; https://github.com/egraphs-good/egg/blob/main/tests/prop.rs
+  ;; https://github.com/egraphs-good/egg/blob/main/tests/prop.rs
+  
     ;; associativity, distributivity
-  (and (or ?a ?b) ?c)     (or (and ?a ?c) (and ?b ?c))
-  (or (and ?a ?c) (and ?b ?c)) (and (or ?a ?b) ?c)
-  (or (and ?a ?b) ?c)  (and (or ?a ?c) (or ?b ?c))
-  (and (or ?a ?c) (or ?b ?c)) (or (and ?a ?b) ?c)
+ ; (and (or ?a ?b) ?c)     (or (and ?a ?c) (and ?b ?c))
+ ; (or (and ?a ?c) (and ?b ?c)) (and (or ?a ?b) ?c)
 
-    ;; https://github.com/egraphs-good/egg/blob/main/tests/prop.rs
-  (and ?a true) ?a
-  (and ?a false) false
+ ; (or (and ?a ?b) ?c)  (and (or ?a ?c) (or ?b ?c))
+ ; (and (or ?a ?c) (or ?b ?c)) (or (and ?a ?b) ?c)
+  )
 
-  (or ?a true) true
-  (or ?a false) ?a)
+(defrules logical-demoragan
+  (not (and ?a ?b)) <=> (or (not ?a) (not ?b))
+  (not (or ?a ?b))  <=> (and (not ?a) (not ?b)))
 
 (defrules basic-rewrites
   (* ?a ?b)        (* ?b ?a)
@@ -86,6 +86,21 @@
   (= ?a ?a)        true               ;; reflexive
   (= ?a ?b)        (= ?b ?a)          ;; symmetric
   (and (= ?a ?b) (= ?b ?c)) (= ?a ?c) ;; transitive
+
+  (= true ?a)      ?a
+  (= false ?a)     (not ?a)
+  (not ?a)         (= false ?a)
+  )
+
+(defrules equation-simplify
+  (= (+ ?a ?b) (?a ?c))   => (= ?b ?c)
+  (= (- ?a ?c) (- ?b ?c)) => (= ?a ?b)
+
+  (= (/ ?a ?x) (/ ?b ?x)) => (= ?a ?b)
+  (= (* ?a ?x) (* ?b ?x)) => (or (= 0 ?x) (= ?a ?b))
+     
+  (= 0 (* ?a ?b))         => (or (= 0 ?a) (= 0 ?b))
+  (= 0 (/ ?a ?b))         => (= 0 ?a)
   )
 
 (defrules exponentials

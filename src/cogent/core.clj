@@ -10,6 +10,8 @@
 ;; Todo: check Tarjan's union find algorithm
 ;; https://dl.acm.org/doi/10.1145/321879.321884
 
+(def ^:dynamic *rules* cogent.rules/rules)
+
 (def empty-graph
   ^{:next-idx 0}
   {:enode->eclass {}
@@ -90,6 +92,7 @@
 
 
 (defn- equality-saturation-step [rewrites egraph]
+  (println :step egraph)
   (reduce (fn [egraph [eclass value]] (egraph-add egraph eclass value))
           egraph
           (for [[lhs rhs]      rewrites
@@ -102,13 +105,18 @@
 
 (defn congruent? [egraph form1 form2]
   ;; get classes of both, check if these are congruent
-  )
+  (let [class1 (->> (ematch egraph form1) (map second) set)
+        class2 (->> (ematch egraph form2) (map second) set)]
+    (println :1 (ematch egraph form1))
+    (println :b (ematch egraph form2))
+    (and (= 1 (count class1))
+         (= class1 class2))))
 
 ;; return bindings for solved form
 (defn solve [egraph form])
 
-(defn tautology? [egraph expression]
-  (congruent? egraph expression true))
+(defn tautology? [expression]
+  (congruent? (equality-saturation expression *rules*) expression true))
 
 (-> '(* 1 (* 3 (* 1 0)))
     (equality-saturation rules/rules)
