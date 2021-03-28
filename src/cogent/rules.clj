@@ -17,12 +17,15 @@
           `(defrule ~(gensym (name rule-name)) ~a ~b))))
 
 (defrules for-tests
-;  (* ?a ?b) (* ?b ?a)
+ (* ?a ?b) (* ?b ?a)
 
   (and true ?x) ?x
   (and ?x ?y) (and ?y ?x)
   ;(or ?x ?y) (or ?y ?x)
-
+  ;  
+  (* ?a (* ?b ?c)) (* (* ?a ?b) ?c)
+  ; (* ?a ?b) (* ?b ?a)
+  
   )
 
 #_
