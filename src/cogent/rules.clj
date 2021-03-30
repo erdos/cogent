@@ -1,31 +1,25 @@
 (ns cogent.rules)
 
+;; see also:
+;; https://www.cs.cornell.edu/~ross/publications/eqsat/MikeThesis.pdf
+
 (def rules {})
 
-(def ?a '?a) (def ?b '?b) (def ?c '?c)
+(declare ?a ?b ?c ?d ?x ?y)
 
 (defmacro defrule [rule-name pattern body]
   `(alter-var-root #'rules assoc '~pattern '~body))
 
 (defmacro defrules [rule-name & bodies]
-  (cons 'do
-        (for [[a op b] (if (some '#{=> <=>} bodies)
-                         (partition 3 bodies)
-                         (map (juxt first = second) (partition 2 bodies)))
-              [a b] (if (= '<=> op)
-                      [[a b] [b a]] [[a b]])]
-          `(defrule ~(gensym (name rule-name)) ~a ~b))))
-
-#_(defrules for-tests
-    (* ?a ?b) (* ?b ?a)
-
-    (and true ?x) ?x
-    (and ?x ?y) (and ?y ?x)
-  ;(or ?x ?y) (or ?y ?x)
-  ;  
-    (* ?a (* ?b ?c)) (* (* ?a ?b) ?c)
-  ; (* ?a ?b) (* ?b ?a)
-    )
+  (let [bodies (remove string? bodies)
+        bodies (if (some '#{=> <=>} bodies)
+                 (partition 3 bodies)
+                 (map (juxt first (constantly '=>) second) (partition 2 bodies)))]
+    (cons 'do
+          (for [[a op b] bodies
+                [a b] (if (= '<=> op)
+                        [[a b] [b a]] [[a b]])]
+            `(defrule ~(gensym (name rule-name)) ~a ~b)))))
 
 
 (defrules logical-operators
@@ -45,7 +39,8 @@
 
   (not true)   false
   (not false)  true
-  (not (not ?a)) ?a)
+  (not (not ?a)) ?a
+  )
 
   ;; https://github.com/egraphs-good/egg/blob/main/tests/prop.rs
 
@@ -69,24 +64,29 @@
 
   (+ ?a ?b)        (+ ?b ?a)               ;; commutative
   (+ ?a (+ ?b ?c)) (+ (+ ?a ?b) ?c)
-  (+ ?a 0)         ?a                      ;; null elem
+  (+ 0 ?a)         ?a                      ;; null elem
   (* (+ ?a ?b) ?c) (+ (* ?a ?c) (* ?b ?c)) ;; distributive
   (+ (* ?a ?c) (* ?b ?c)) (* (+ ?a ?b) ?c) ;; factor
 
     ;; subtraction
-  (- ?a ?b)        (+ ?a (* -1 ?b))
-  (- ?a ?a)        0
+  (- ?a ?b)         (+ ?a (* -1 ?b))
+  (+ ?a (* -1 ?b))  (- ?a ?b)        
+  (- ?a ?a)         0
 
     ;; division
-  (/ ?a ?a)        1
+  ;; (/ ?a ?a)        1 ONLY IF ?a!=0
+
   (/ (+ ?a ?b) ?c) (+ (/ ?a ?c) (/ ?b ?c))
 
     ;; constants
   (+ ?a ?a)        (* 2 ?a)
 
     ;; power
+  (* ?x ?x) (pow ?x 2)
+  (pow ?x 2) (* ?x ?x)
   (pow ?x 1) ?x
   (pow ?x 0) 1
+  
     ;; TODO: maybe do some integration as well here?
 
     ;; 
@@ -95,15 +95,13 @@
    ;; TODO: do we need both directions?
   )
 
-
 (defrules equivalence-relation
-  (= ?a ?a)        true               ;; reflexive
-  (= ?a ?b)        (= ?b ?a)          ;; symmetric
-  (and (= ?a ?b) (= ?b ?c)) (= ?a ?c) ;; transitive
-
-  (= true ?a)      ?a
-  (= false ?a)     (not ?a)
-  (not ?a)         (= false ?a))
+  (= ?a ?a)                 => true      ;; reflexive
+  (= ?a ?b)                 => (= ?b ?a) ;; symmetric
+  (and (= ?a ?b) (= ?b ?c)) => (= ?a ?c) ;; transitive
+  (= true ?a)               => ?a
+  (= true false)            => false
+  (= false ?a)             <=> (not ?a))
 
 
 (defrules equation-simplify
@@ -116,7 +114,17 @@
   (= 0 (* ?a ?b))         => (or (= 0 ?a) (= 0 ?b))
   (= 0 (/ ?a ?b))         => (= 0 ?a)
   (/ 0 ?x)                => 0
-  )
+
+  (= 1 (* ?x ?x))         => (or (= 1 ?x) (= -1 ?x))
+  (= (* ?x ?x) ?x)        => (or (= 1 ?x) (= 0 ?x)))
+
+
+(defrules relations
+  (< ?a ?b)       <=> (> ?b ?a)
+  (<= ?a ?b)      <=> (or (< ?a ?b) (= ?a ?b))
+  (>= ?a ?b)      <=> (<= ?b ?a)
+  (< ?a ?b)       <=> (not (=> ?a ?b))
+  (not (= ?a ?b)) <=> (or (< ?a ?b) (> ?a ?b)))
 
 
 (defrules exponentials
@@ -128,6 +136,13 @@
   (exp (log ?a))         => ?a
 
   (exp ?x)              <=> (pow e ?x))
+
+;; TODO
+(defrules absolute-value
+  (abs 0)               => 0
+  (= 0 (abs ?x))        => (= ?x 0)
+  ;; (sqrt (pow ?x 2))     => (abs ?x)
+  )
 
 
 (defrules symbolic-differentiation
@@ -143,8 +158,9 @@
   (d ?x (+ ?a ?b)) => (+ (d ?x ?a) (d ?x ?b))
   (d ?x (* ?a ?b)) => (+ (* (d ?x ?a) ?b) (* ?a (d ?x ?b)))
 
-  ;; chain rule
+  "chain rule"
   (d ?x (exp ?y))  => (* (exp ?y) (d ?x ?y))
+  (d ?x (log ?y))  => (/ (d ?x ?y) ?y)
 
 ;  (d ?x (pow ?a number/?b)) => 
 
@@ -160,10 +176,12 @@
 
   (/ (sin ?x) (cos ?x))                 <=> (tan ?x)
 
+  "symmetries"
   (sin (* -1 ?x))                       <=> (* -1 (sin ?x))
   (cos (* -1 ?x))                       <=> (cos ?x)
   (tan (* -1 ?x))                       <=> (* -1 (tan ?x))
 
+  "additive rules"
   (sin (+ ?a ?b))                       <=> (+ (* (sin ?a) (cos ?b)) (* (cos ?a) (sin ?b)))
   (sin (- ?a ?b))                       <=> (- (* (sin ?a) (cos ?b)) (* (cos ?a) (sin ?b)))
   (cos (+ ?a ?b))                       <=> (- (* (cos ?a) (cos ?b)) (* (sin ?a) (sin ?b)))

@@ -1,4 +1,8 @@
-(ns cogent.union-find)
+(ns cogent.union-find
+  "Immutable union-set data structure
+   
+   https://dl.acm.org/doi/10.1145/321879.321884
+   ")
 
 (def empty-set {::parents (delay [])})
 
@@ -31,3 +35,28 @@
         (let [grandparent (get @(::parents data) parent)]
           (swap! (::parents data) assoc current grandparent)
           (recur grandparent))))))
+
+(defn all-parents [data]
+  (assert (::parents data))
+  (mapv (partial find-class data) (range (count @(::parents data)))))
+
+;; compacts set to a form where every union is represented by one id exactly.
+;; returns tuple of [new-data remplacements-map]
+(defn compact [data]
+  (assert (::parents data))
+  (let [max-id (count @(::parents data))]
+    (loop [idx 0
+           idx->parent {}
+           parent->newid {}]
+      (if (< idx max-id)
+        (let [parent (find-class data idx)
+              idx->parent (assoc idx->parent idx parent)
+              parent->newid (if (contains? parent->newid parent)
+                              parent->newid
+                              (assoc parent->newid parent (count parent->newid)))]
+          (recur (inc idx) idx->parent parent->newid))
+        (if (= (count parent->newid) max-id)
+          [data
+           nil]
+          [{::parents (atom (vec (range (count parent->newid))))}
+           (reduce-kv (fn [m k v] (assoc m k (parent->newid v))) {} idx->parent)])))))

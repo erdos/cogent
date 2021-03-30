@@ -1,5 +1,6 @@
 (ns cogent.core
   (:require [clojure.walk]
+            [cogent.helper :refer :all]
             [cogent.rules :as rules]
             [cogent.union-find :as union-find]))
 
@@ -9,34 +10,23 @@
 ;;
 ;;
 ;; Todo: check Tarjan's union find algorithm
-;; https://dl.acm.org/doi/10.1145/321879.321884
-
+;; 
 
 (declare debug)
 
+
 (def ^:dynamic *rules* cogent.rules/rules)
+
 
 (def empty-graph
   (assoc union-find/empty-set
          :enode->eclass {}
          :eclass->enodes {}))
 
+
 (defn- rhs-substitute [rhs subst]
   (assert (map? subst))
   (clojure.walk/postwalk-replace subst rhs))
-
-;; cartesian product of collections
-(defn cartesian
-  ([as bs]    (for [a as b bs] [a b]))
-  ([as bs cs] (for [a as b bs c cs] [a b c])))
-
-(defn merge-disjunct [m & ms]
-  (reduce (partial reduce-kv
-                   (fn [m k v]
-                     (if (and (contains? m k) (not= v (m k)))
-                       (reduced nil)
-                       (assoc m k v))))
-          m ms))
 
 
 ;; return tuple if [graph class]
@@ -58,25 +48,6 @@
              (update :enode->eclass assoc canonical new-class))
          new-class]))))
 
-;; returns egraph
-;; expression is not canonical!
-(defn add-canonical-id [egraph expression class]
-  (let [[egraph canon-expr]
-        (if (seq? expression)
-          (reduce (fn [[egraph canon-expr] elem]
-                    (let [[egraph class] (add-canonical egraph elem)]
-                      [egraph (conj canon-expr class)])) [egraph []] expression)
-          [egraph expression])
-        existing-class (get (:enode->eclass egraph) canon-expr)
-
-        egraph (update egraph :eclass->enodes update class (fnil conj #{}) canon-expr)
-        egraph (update egraph :enode->eclass assoc canon-expr class)]
-    (if existing-class
-      (first (union-find/merge-set egraph existing-class class))
-      egraph)))
-
-
-(defn initial-egraph [expr] (first (add-canonical empty-graph expr)))
 
 ;; returns list of tuples of [{variable eclass}] where substitutions is a map of var name to canonical id
 (defn ematch [egraph pattern]
@@ -111,60 +82,112 @@
           var-map (match-expr pattern node)]
       [var-map (get-in egraph [:enode->eclass node])])))
 
-;; rebuild indices
+
+(defn- fix-unions [egraph]
+  (->>
+   (:enode->eclass egraph)
+   (reduce-kv (fn [m old-node old-class]
+                (let [old-class (union-find/find-class egraph old-class)
+                      new-node (if (vector? old-node)
+                                 (mapv (partial union-find/find-class egraph) old-node)
+                                 old-node)]
+                  (update m new-node (fnil conj #{}) old-class)))
+              {})
+   (vals)
+   (reduce (fn [egraph old-classes]
+             (first
+              (reduce (fn [[egraph class1] class2]
+                        (union-find/merge-set egraph class1 class2))
+                      [egraph (first old-classes)]
+                      (next old-classes))))
+           egraph)))
+
+
 (defn rebuild [egraph]
-  ;(println :rebuild egraph)
-  #_(println "Before rebuild")
-;  (debug egraph)
-  (letfn [(normalize-node
-            [node]
-            (if (vector? node)
-              (mapv (partial union-find/find-class egraph) node)
-              node))
-          (normalize-class [class] (union-find/find-class egraph class))]
-    (-> egraph
-        (update :enode->eclass
-                (fn [m] (zipmap (map normalize-node (keys m))
-                                (map normalize-class (vals m)))))
-        (update :eclass->enodes
-                (fn [m]
-                  ;; if keys resolve to same value then we merge them.
-                  (reduce-kv (fn [m k v]
-                               (update m
-                                       (normalize-class k)
-                                       (fnil into #{})
-                                       (map normalize-node v)))
-                             {} m)))
-        )))
+  (println :before-rebuilding)
+  (debug egraph)
+  ; (println :rebuilding @(::union-find/parents egraph))
+  (let [egraph (fixpt fix-unions egraph)
+        _ (println :unions-fixed) _ (debug egraph)
+        [new-graph rename-class] (union-find/compact egraph)
+        rename-node (fn [old-node]
+                      (if (vector? old-node)
+                        (mapv rename-class old-node)
+                        old-node))]
+    (println :rename-class (into (sorted-map) rename-class))
+    (if (= egraph new-graph)
+      egraph
+      (reduce-kv (fn [new-graph old-node old-class]
+                   (let [new-node  (rename-node old-node)
+                         new-class (rename-class old-class)]
+                     (when-let [existing-classs (get (:enode->eclass new-graph) new-node)]
+                       ;; each node should be uniquely mapped...
+                       (assert (= existing-classs new-class)
+                               (str new-node " : "  existing-classs " vs " new-class)))
+                     (-> new-graph
+                         (update :eclass->enodes update new-class (fnil conj #{}) new-node)
+                         (update :enode->eclass assoc new-node new-class))))
+                 new-graph
+                 (:enode->eclass egraph)))))
 
-(defn- fixpt [mapping value]
-  (assert (ifn? mapping))
-  (let [mapped (mapping value)]
-    (if (= mapped value)
-      mapped
-      (recur mapping mapped))))
 
-(def kill (atom 0))
+(def ^:private kill (atom 0))
+
 
 (defn- equality-saturation-step [rewrites egraph]
-  (println :step)
-  (debug egraph)
-  (assert (< (swap! kill inc) 20) "Too many iterations!")
-  (reduce (fn [egraph [eclass value]] (add-canonical-id egraph value eclass))
+;  (println :step)
+;  (debug egraph)
+  (assert (< (swap! kill inc) 100) "Too many iterations!")
+  (doseq  [[class nodes] (:eclass->enodes egraph)
+           node nodes
+           :when (vector? node)
+           v node]
+    ;; every referenced item is found.
+    (assert (contains? (:eclass->enodes egraph) v)
+            (str "Unexpected id: " v " << " (union-find/find-class egraph v))))
+
+  (reduce (fn [egraph [eclass value]]
+            (let [[egraph new-id] (add-canonical egraph value)
+                  [egraph _ _] (union-find/merge-set egraph new-id eclass)]
+              egraph))
           egraph
           (for [[lhs rhs]      rewrites
                 [subst eclass] (ematch egraph lhs)]
             [eclass (rhs-substitute rhs subst)])))
 
+
+;; checks that each class may contain exactly 1 scalar value
+;; otherwise throws exception.
+(defn- check-graph-contradiction [egraph]
+  (println :after-rebuilding)
+  (debug egraph)
+  (reduce-kv (fn [m k v]
+               (if (scalar? k)
+                 (if (contains? m v)
+                   (throw (ex-info "Contradiction has been found" {:v v}))
+                   (conj m v))
+                 m))
+             #{}
+             (:enode->eclass egraph))
+  egraph)
+
+
 (defn graph-equality-saturation [egraph rewrites]
   (reset! kill 0)
-  (fixpt (comp rebuild (partial equality-saturation-step rewrites)) egraph))
+  (fixpt (comp check-graph-contradiction
+               rebuild
+               (partial equality-saturation-step rewrites))
+         egraph))
+
 
 (defn debug [egraph]
   (println "Egraph")
-  ; (println @(::union-find/parents egraph))
+
+  (println (union-find/all-parents egraph))
+  (println (into (sorted-map) (:eclass->enodes egraph)))
   (doseq [[k v] (sort (:eclass->enodes egraph))]
-    (println " -" k ":"  v)))
+    (apply println "-" k "\t:"  (sort-by (juxt vector? boolean? number? symbol? identity) v)))
+  (println "---"))
 
 (defn congruent?
   ([form1 form2]
@@ -191,8 +214,6 @@
 (defn tautology? [expression]
   (congruent? expression true))
 
-(defn- scalar? [x] (or (number? x) (boolean? x)))
-
 (def ^:private logical-ops '#{not and or = < >})
 
 ;; return solutions for x
@@ -205,8 +226,3 @@
                    (let [v (get (first x) '?x)]
                      (when (scalar? v)
                        (first x))))))))
-
-#_
-(-> '(* 1 (* 3 (* 1 0)))
-      (equality-saturation rules/rules)
-      (println))

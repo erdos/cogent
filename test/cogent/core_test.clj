@@ -4,15 +4,7 @@
 
 (defn- proj [x] (select-keys x [:enode->eclass :eclass->enodes]))
 
-(deftest test-merge-disjunct
-  (testing "Empty maps"
-    (is (= {} (merge-disjunct {} {})))
-    (is (= {:a 1} (merge-disjunct {} {:a 1}) (merge-disjunct {:a 1} {}))))
-  (testing "All intersecing entries are the"
-    (is (= {:a 1 :b 2} (merge-disjunct {:a 1} {:a 1 :b 2}))))
-  (testing "Common keys have different values"
-    (is (= nil (merge-disjunct {:a 1} {:a 2})))
-    (is (= nil (merge-disjunct {:a 1 :c 4} {:a 2 :b 3})))))
+(defn- initial-egraph [expr] (first (add-canonical empty-graph expr)))
 
 
 (deftest test-initial-graph
@@ -82,6 +74,8 @@
 
 (deftest congruence-test
   (is (congruent? '(* 1 0) 0))
+  (is (not (congruent? '(* 1 0) 1)))
+
   (is (congruent? '(* 2 x) '(* x 2)))
   (is (congruent? '(* a (+ b c)) '(+ (* c a) (* b a))))
 
@@ -97,11 +91,19 @@
 (deftest test-solve
   (is (= '[{?x true}] (solve '(= true (and true x))))))
 
+(deftest test-simplify
+
+  ;; TODO: divide both sides by X and  give conditionals
+  #_(is (= '[{?x 0} {?x 1}]
+           (solve '(= true (= x (* x x)))))))
+
+
 #_
 (deftest test-diff-congruent
   (is (congruent? '(d x (+ (pow x 4) 3))
                   '(* 4 (pow x 3))))
   )
 
+#_
 (deftest test-tautology
     (is (tautology? '(or x (and true (not x))))))
