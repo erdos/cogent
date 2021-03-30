@@ -1,52 +1,60 @@
 (ns cogent.rules)
 
+;; see also:
+;; https://www.cs.cornell.edu/~ross/publications/eqsat/MikeThesis.pdf
+
 (def rules {})
 
-(def ?a '?a) (def ?b '?b) (def ?c '?c)
+(declare ?a ?b ?c ?d ?x ?y)
 
 (defmacro defrule [rule-name pattern body]
   `(alter-var-root #'rules assoc '~pattern '~body))
 
 (defmacro defrules [rule-name & bodies]
-  (cons 'do
-        (for [[a op b] (if (some '#{=> <=>} bodies)
-                         (partition 3 bodies)
-                         (map (juxt first = second) (partition 2 bodies)))
-              [a b] (if (= '<=> op)
-                      [[a b] [b a]] [[a b]])]
-          `(defrule ~(gensym (name rule-name)) ~a ~b))))
+  (let [bodies (remove string? bodies)
+        bodies (if (some '#{=> <=>} bodies)
+                 (partition 3 bodies)
+                 (map (juxt first (constantly '=>) second) (partition 2 bodies)))]
+    (cons 'do
+          (for [[a op b] bodies
+                [a b] (if (= '<=> op)
+                        [[a b] [b a]] [[a b]])]
+            `(defrule ~(gensym (name rule-name)) ~a ~b)))))
+
 
 (defrules logical-operators
-  (or ?a ?a)       ?a
-  (or ?a ?b)       (or ?b ?a)
+  (or ?a ?a)         ?a
+  (or ?a ?b)         (or ?b ?a)
   (or ?a (or ?b ?c)) (or (or ?a ?b) ?c)
+  (or ?a (not ?a))   true
+  (or ?a true)       true
+  (or ?a false)      ?a
 
-  (or ?a (not ?a)) true
-  (and ?a (not ?a)) false
+  (and ?a ?a)          ?a
+  (and ?a ?b)          (and ?b ?a)
+  (and ?a (and ?b ?c)) (and (and ?a ?b) ?c)
+  (and ?a (not ?a))    false
+  (and ?a true)        ?a
+  (and ?a false)       false
 
   (not true)   false
   (not false)  true
   (not (not ?a)) ?a
+  )
 
-    ;; de morgan
-  (not (and ?a ?b))       (or (not ?a) (not ?b))
-  (or (not ?a) (not ?b))  (not (and ?a ?b))
-  (not (or ?a ?b))        (and (not ?a) (not ?b))
-  (and (not ?a) (not ?b)) (not (or ?a ?b))
+  ;; https://github.com/egraphs-good/egg/blob/main/tests/prop.rs
 
-    ;; https://github.com/egraphs-good/egg/blob/main/tests/prop.rs
-    ;; associativity, distributivity
-  (and (or ?a ?b) ?c)     (or (and ?a ?c) (and ?b ?c))
-  (or (and ?a ?c) (and ?b ?c)) (and (or ?a ?b) ?c)
-  (or (and ?a ?b) ?c)  (and (or ?a ?c) (or ?b ?c))
-  (and (or ?a ?c) (or ?b ?c)) (or (and ?a ?b) ?c)
 
-    ;; https://github.com/egraphs-good/egg/blob/main/tests/prop.rs
-  (and ?a true) ?a
-  (and ?a false) false
+(defrules logical-distr
+  ;; distributivity
+  (and (or ?a ?b) ?c)  <=>  (or (and ?a ?c) (and ?b ?c))
+  (or (and ?a ?b) ?c) <=>  (and (or ?a ?c) (or ?b ?c)))
 
-  (or ?a true) true
-  (or ?a false) ?a)
+
+(defrules logical-demoragan
+  (not (and ?a ?b)) <=> (or (not ?a) (not ?b))
+  (not (or ?a ?b))  <=> (and (not ?a) (not ?b)))
+
 
 (defrules basic-rewrites
   (* ?a ?b)        (* ?b ?a)
@@ -56,24 +64,29 @@
 
   (+ ?a ?b)        (+ ?b ?a)               ;; commutative
   (+ ?a (+ ?b ?c)) (+ (+ ?a ?b) ?c)
-  (+ ?a 0)         ?a                      ;; null elem
+  (+ 0 ?a)         ?a                      ;; null elem
   (* (+ ?a ?b) ?c) (+ (* ?a ?c) (* ?b ?c)) ;; distributive
   (+ (* ?a ?c) (* ?b ?c)) (* (+ ?a ?b) ?c) ;; factor
 
     ;; subtraction
-  (- ?a ?b)        (+ ?a (* -1 ?b))
-  (- ?a ?a)        0
+  (- ?a ?b)         (+ ?a (* -1 ?b))
+  (+ ?a (* -1 ?b))  (- ?a ?b)        
+  (- ?a ?a)         0
 
     ;; division
-  (/ ?a ?a)        1
+  ;; (/ ?a ?a)        1 ONLY IF ?a!=0
+
+  (/ (+ ?a ?b) ?c) (+ (/ ?a ?c) (/ ?b ?c))
 
     ;; constants
   (+ ?a ?a)        (* 2 ?a)
-  (+ ?a ?a ?a)     (* 3 ?a)
 
     ;; power
+  (* ?x ?x) (pow ?x 2)
+  (pow ?x 2) (* ?x ?x)
   (pow ?x 1) ?x
   (pow ?x 0) 1
+  
     ;; TODO: maybe do some integration as well here?
 
     ;; 
@@ -83,19 +96,54 @@
   )
 
 (defrules equivalence-relation
-  (= ?a ?a)        true               ;; reflexive
-  (= ?a ?b)        (= ?b ?a)          ;; symmetric
-  (and (= ?a ?b) (= ?b ?c)) (= ?a ?c) ;; transitive
-  )
+  (= ?a ?a)                 => true      ;; reflexive
+  (= ?a ?b)                 => (= ?b ?a) ;; symmetric
+  (and (= ?a ?b) (= ?b ?c)) => (= ?a ?c) ;; transitive
+  (= true ?a)               => ?a
+  (= true false)            => false
+  (= false ?a)             <=> (not ?a))
+
+
+(defrules equation-simplify
+  (= (+ ?a ?b) (+ ?a ?c)) => (= ?b ?c)
+  (= (- ?a ?c) (- ?b ?c)) => (= ?a ?b)
+
+  (= (/ ?a ?x) (/ ?b ?x)) => (= ?a ?b)
+  (= (* ?a ?x) (* ?b ?x)) => (or (= 0 ?x) (= ?a ?b))
+
+  (= 0 (* ?a ?b))         => (or (= 0 ?a) (= 0 ?b))
+  (= 0 (/ ?a ?b))         => (= 0 ?a)
+  (/ 0 ?x)                => 0
+
+  (= 1 (* ?x ?x))         => (or (= 1 ?x) (= -1 ?x))
+  (= (* ?x ?x) ?x)        => (or (= 1 ?x) (= 0 ?x)))
+
+
+(defrules relations
+  (< ?a ?b)       <=> (> ?b ?a)
+  (<= ?a ?b)      <=> (or (< ?a ?b) (= ?a ?b))
+  (>= ?a ?b)      <=> (<= ?b ?a)
+  (< ?a ?b)       <=> (not (=> ?a ?b))
+  (not (= ?a ?b)) <=> (or (< ?a ?b) (> ?a ?b)))
+
 
 (defrules exponentials
-  
   (exp 0)                => 1
   (log 1)                => 0
   (exp (+ ?a ?b))       <=> (* (exp ?a) (exp ?b))
   (log (* ?a ?b))       <=> (+ (log ?a) (log ?b))
   (log (exp ?a))         => ?a
-  (exp (log ?a))         => ?a)
+  (exp (log ?a))         => ?a
+
+  (exp ?x)              <=> (pow e ?x))
+
+;; TODO
+(defrules absolute-value
+  (abs 0)               => 0
+  (= 0 (abs ?x))        => (= ?x 0)
+  ;; (sqrt (pow ?x 2))     => (abs ?x)
+  )
+
 
 (defrules symbolic-differentiation
       ;; https://github.com/egraphs-good/egg/blob/main/tests/math.rs
@@ -103,8 +151,48 @@
     ;; (d ?x ?x) 1 ;; if symbol
     ;; (d ?x ?x) 0 ;; f  c onstant or distinct var.
     ;; (d ?x (+ ?a ?b)) (+ (d ?x ?a) (d ?x ?b))
-  
-  (d (+ ?a ?b)) => (+ (d ?a) (d ?b))
-  (d (exp ?a))  => (exp ?a)
-  (d (log ?a))  => (/ 1 ?a)
+
+  (d ?x ?x)        => 1
+  (d ?x ?symbol/y) => (fn [?x ?y] (when (not= ?x ?y)));; if dinstinct!!
+
+  (d ?x (+ ?a ?b)) => (+ (d ?x ?a) (d ?x ?b))
+  (d ?x (* ?a ?b)) => (+ (* (d ?x ?a) ?b) (* ?a (d ?x ?b)))
+
+  "chain rule"
+  (d ?x (exp ?y))  => (* (exp ?y) (d ?x ?y))
+  (d ?x (log ?y))  => (/ (d ?x ?y) ?y)
+
+;  (d ?x (pow ?a number/?b)) => 
+
+  ;(d ?x (exp ?a))  => (exp ?a)
+  ;(d ?x (log ?a))  => (/ 1 ?a)
   )
+
+
+(defrules trigonometry
+  (+ (pow (sin ?x) 2) (pow (cos ?x) 2)) => 1
+  (- 1 (pow (sin ?x) 2))                <=> (pow (cos ?x) 2)
+  (- 1 (pow (cos ?x) 2))                <=> (pow (sin ?x) 2)
+
+  (/ (sin ?x) (cos ?x))                 <=> (tan ?x)
+
+  "symmetries"
+  (sin (* -1 ?x))                       <=> (* -1 (sin ?x))
+  (cos (* -1 ?x))                       <=> (cos ?x)
+  (tan (* -1 ?x))                       <=> (* -1 (tan ?x))
+
+  "additive rules"
+  (sin (+ ?a ?b))                       <=> (+ (* (sin ?a) (cos ?b)) (* (cos ?a) (sin ?b)))
+  (sin (- ?a ?b))                       <=> (- (* (sin ?a) (cos ?b)) (* (cos ?a) (sin ?b)))
+  (cos (+ ?a ?b))                       <=> (- (* (cos ?a) (cos ?b)) (* (sin ?a) (sin ?b)))
+  (cos (- ?a ?b))                       <=> (+ (* (cos ?a) (cos ?b)) (* (sin ?a) (sin ?b)))
+
+  ;; 
+  )
+
+
+(defrules completing-the-square
+  (= (+ (* ?a (pow ?x 2)) (+ (* ?b ?x) ?c)) 0)
+  =>
+  (= (+ (* ?a (pow (+ x (/ ?b (* 2 ?a))) 2)) (- ?c (/ (pow ?b 2) (* 4 ?a)))) 0))
+

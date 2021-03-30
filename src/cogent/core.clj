@@ -1,6 +1,8 @@
 (ns cogent.core
   (:require [clojure.walk]
-            [cogent.rules :as rules]))
+            [cogent.helper :refer :all]
+            [cogent.rules :as rules]
+            [cogent.union-find :as union-find]))
 
 ;;
 ;; See: egg: Fast and Extensible Equality Saturation
@@ -8,109 +10,219 @@
 ;;
 ;;
 ;; Todo: check Tarjan's union find algorithm
-;; https://dl.acm.org/doi/10.1145/321879.321884
+;; 
+
+(declare debug)
+
+
+(def ^:dynamic *rules* cogent.rules/rules)
+
 
 (def empty-graph
-  ^{:next-idx 0}
-  {:enode->eclass {}
-   :eclass->enodes {}})
+  (assoc union-find/empty-set
+         :enode->eclass {}
+         :eclass->enodes {}))
 
-(declare egraph-add)
-
-(defn initial-egraph [expr]
-  (egraph-add empty-graph expr))
 
 (defn- rhs-substitute [rhs subst]
+  (assert (map? subst))
   (clojure.walk/postwalk-replace subst rhs))
 
-;; cartesian product of collections
-(defn cartesian
-  ([as bs]    (for [a as b bs] [a b]))
-  ([as bs cs] (for [a as b bs c cs] [a b c])))
 
-(defn merge-disjunct [m & ms]
-  (reduce (partial reduce-kv
-                   (fn [m k v]
-                     (if (and (contains? m k) (not= v (m k)))
-                       (reduced nil)
-                       (assoc m k v))))
-          m ms))
+;; return tuple if [graph class]
+(defn add-canonical [egraph expression]
+  ;; expression is not canonical!
+  (let [[egraph canonical]
+        (if (seq? expression)
+          (reduce (fn [[egraph elems] elem]
+                    (let [[egraph elem-class] (add-canonical egraph elem)]
+                      [egraph (conj elems elem-class)]))
+                  [egraph []]
+                  expression)
+          [egraph expression])]
+    (if-let [existing-class (get (:enode->eclass egraph) canonical)]
+      [egraph existing-class] ;; (union-find/find-class egraph existing-class)
+      (let [[egraph new-class] (union-find/make-set egraph)]
+        [(-> egraph
+             (update :eclass->enodes assoc new-class #{canonical})
+             (update :enode->eclass assoc canonical new-class))
+         new-class]))))
 
-;; if match found: returns list of tuples of [substitutions eclass]
-(defn ematch [egraph lhs]
-  (letfn [(match-expr [lhs expr]
+
+;; returns list of tuples of [{variable eclass}] where substitutions is a map of var name to canonical id
+(defn ematch [egraph pattern]
+  (letfn [(match-expr*
+            [pattern class]
+            (mapcat (partial match-expr pattern) (get-in egraph [:eclass->enodes class])))
+          (match-expr
+            [pattern expression]
+           ;(println :matching pattern expression)
             (cond
-              (and (symbol? lhs) (.startsWith (name lhs) "?"))
-              [{lhs expr}]
+              (and (symbol? pattern) (.startsWith (name pattern) "?"))
+              (case (namespace pattern)
+                "number"
+                (when (number? expression)
+                  [{(symbol (name pattern)) expression}])
 
-              (and (seq? lhs) (seq? expr) (= (count lhs) (count expr)))
-              (keep (partial apply merge-disjunct) (apply cartesian (map match-expr lhs expr)))
+                "symbol"
+                (when (symbol? expression)
+                  [{(symbol (name pattern)) expression}])
 
-              (= lhs expr)
+                nil
+                [{pattern expression}])
+
+              (and (seq? pattern) (vector? expression) (= (count pattern) (count expression)))
+              (->> (map match-expr* pattern expression)
+                   (apply cartesian)
+                   (keep (partial apply merge-disjunct)))
+
+              (= pattern expression)
               [{}]))]
     (for [node (keys (:enode->eclass egraph))
-          bind (match-expr lhs node)]
-      [bind (get-in egraph [:enode->eclass node])])))
+          var-map (match-expr pattern node)]
+      [var-map (get-in egraph [:enode->eclass node])])))
 
 
-;; returns tuple of [graph, class2]
-(defn egraph-add
-  ([egraph value]
-   (egraph-add (vary-meta egraph update :next-idx inc)
-               (-> egraph meta :next-idx)
-               value))
-  ([egraph eclass value]
-   (assert (int? eclass) (str "Not class  " (pr-str eclass)))
-   (assert (every? sequential? (vals (:eclass->enodes egraph))))
-   (if-let [old-class (get-in egraph [:enode->eclass value])]
-     (if (= eclass old-class)
-       egraph
-       (-> egraph
-           (update :eclass->enodes dissoc old-class)
-           (update-in [:eclass->enodes eclass] into
-                      (get-in egraph [:eclass->enodes old-class]))
-           (assoc-in [:enode->eclass value] eclass)
-           (update :enode->eclass
-                   into
-                   (map vector
-                        (get-in egraph [:eclass->enodes old-class])
-                        (repeat eclass)))))
-     (reduce egraph-add
-             (-> egraph
-                 (assoc-in [:enode->eclass value] eclass)
-                 (update-in [:eclass->enodes eclass] conj value))
-             (when (coll? value) (seq value))))))
+(defn- fix-unions [egraph]
+  (->>
+   (:enode->eclass egraph)
+   (reduce-kv (fn [m old-node old-class]
+                (let [old-class (union-find/find-class egraph old-class)
+                      new-node (if (vector? old-node)
+                                 (mapv (partial union-find/find-class egraph) old-node)
+                                 old-node)]
+                  (update m new-node (fnil conj #{}) old-class)))
+              {})
+   (vals)
+   (reduce (fn [egraph old-classes]
+             (first
+              (reduce (fn [[egraph class1] class2]
+                        (union-find/merge-set egraph class1 class2))
+                      [egraph (first old-classes)]
+                      (next old-classes))))
+           egraph)))
 
-(defn- fixpt [mapping value]
-  (assert (ifn? mapping))
-  (let [mapped (mapping value)]
-    (if (= mapped value)
-      mapped
-      (recur mapping mapped))))
+
+(defn rebuild [egraph]
+  (println :before-rebuilding)
+  (debug egraph)
+  ; (println :rebuilding @(::union-find/parents egraph))
+  (let [egraph (fixpt fix-unions egraph)
+        _ (println :unions-fixed) _ (debug egraph)
+        [new-graph rename-class] (union-find/compact egraph)
+        rename-node (fn [old-node]
+                      (if (vector? old-node)
+                        (mapv rename-class old-node)
+                        old-node))]
+    (println :rename-class (into (sorted-map) rename-class))
+    (if (= egraph new-graph)
+      egraph
+      (reduce-kv (fn [new-graph old-node old-class]
+                   (let [new-node  (rename-node old-node)
+                         new-class (rename-class old-class)]
+                     (when-let [existing-classs (get (:enode->eclass new-graph) new-node)]
+                       ;; each node should be uniquely mapped...
+                       (assert (= existing-classs new-class)
+                               (str new-node " : "  existing-classs " vs " new-class)))
+                     (-> new-graph
+                         (update :eclass->enodes update new-class (fnil conj #{}) new-node)
+                         (update :enode->eclass assoc new-node new-class))))
+                 new-graph
+                 (:enode->eclass egraph)))))
+
+
+(def ^:private kill (atom 0))
 
 
 (defn- equality-saturation-step [rewrites egraph]
-  (reduce (fn [egraph [eclass value]] (egraph-add egraph eclass value))
+;  (println :step)
+;  (debug egraph)
+  (assert (< (swap! kill inc) 100) "Too many iterations!")
+  (doseq  [[class nodes] (:eclass->enodes egraph)
+           node nodes
+           :when (vector? node)
+           v node]
+    ;; every referenced item is found.
+    (assert (contains? (:eclass->enodes egraph) v)
+            (str "Unexpected id: " v " << " (union-find/find-class egraph v))))
+
+  (reduce (fn [egraph [eclass value]]
+            (let [[egraph new-id] (add-canonical egraph value)
+                  [egraph _ _] (union-find/merge-set egraph new-id eclass)]
+              egraph))
           egraph
           (for [[lhs rhs]      rewrites
                 [subst eclass] (ematch egraph lhs)]
             [eclass (rhs-substitute rhs subst)])))
 
 
-(defn equality-saturation [expr rewrites]
-  (fixpt (partial equality-saturation-step rewrites) (initial-egraph expr)))
+;; checks that each class may contain exactly 1 scalar value
+;; otherwise throws exception.
+(defn- check-graph-contradiction [egraph]
+  (println :after-rebuilding)
+  (debug egraph)
+  (reduce-kv (fn [m k v]
+               (if (scalar? k)
+                 (if (contains? m v)
+                   (throw (ex-info "Contradiction has been found" {:v v}))
+                   (conj m v))
+                 m))
+             #{}
+             (:enode->eclass egraph))
+  egraph)
 
-(defn congruent? [egraph form1 form2]
-  ;; get classes of both, check if these are congruent
-  )
 
-;; return bindings for solved form
-(defn solve [egraph form])
+(defn graph-equality-saturation [egraph rewrites]
+  (reset! kill 0)
+  (fixpt (comp check-graph-contradiction
+               rebuild
+               (partial equality-saturation-step rewrites))
+         egraph))
 
-(defn tautology? [egraph expression]
-  (congruent? egraph expression true))
 
-(-> '(* 1 (* 3 (* 1 0)))
-    (equality-saturation rules/rules)
-    (println))
+(defn debug [egraph]
+  (println "Egraph")
 
+  (println (union-find/all-parents egraph))
+  (println (into (sorted-map) (:eclass->enodes egraph)))
+  (doseq [[k v] (sort (:eclass->enodes egraph))]
+    (apply println "-" k "\t:"  (sort-by (juxt vector? boolean? number? symbol? identity) v)))
+  (println "---"))
+
+(defn congruent?
+  ([form1 form2]
+   (let [egraph (-> empty-graph
+                    (add-canonical form1) (first)
+                    ;(doto (debug))
+                    (add-canonical form2) (first)
+                    ;(doto (debug))
+                    (graph-equality-saturation *rules*))
+         class1 (->> (ematch egraph form1) (map second) set)
+         class2 (->> (ematch egraph form2) (map second) set)]
+     ;(println :1 form1 (ematch egraph form1))
+     ;(println :2 form2 (ematch egraph form2))
+     (or
+      (and (= 1 (count class1))
+           (= class1 class2))
+      (do
+        (println "Not equals!")
+        (println form1 class1)
+        (println form2 class2)
+        (debug egraph)
+        false)))))
+
+(defn tautology? [expression]
+  (congruent? expression true))
+
+(def ^:private logical-ops '#{not and or = < >})
+
+;; return solutions for x
+(defn solve [form]
+  (-> empty-graph
+      (add-canonical form) (first)
+      (graph-equality-saturation *rules*)
+      (ematch '(= x ?x))
+      (->> (keep (fn [x]
+                   (let [v (get (first x) '?x)]
+                     (when (scalar? v)
+                       (first x))))))))
