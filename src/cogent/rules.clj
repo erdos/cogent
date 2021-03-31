@@ -1,4 +1,5 @@
-(ns cogent.rules)
+(ns cogent.rules
+  (:require [clojure.walk]))
 
 ;; see also:
 ;; https://www.cs.cornell.edu/~ross/publications/eqsat/MikeThesis.pdf
@@ -7,8 +8,16 @@
 
 (declare ?a ?b ?c ?d ?x ?y ==>)
 
+(defn- rhs-substitutor [pattern]
+  (fn [substitutions]
+    (assert (map? substitutions))
+    (clojure.walk/postwalk-replace substitutions pattern)))
+
 (defmacro defrule [rule-name pattern body]
-  `(alter-var-root #'rules assoc '~pattern '~body))
+  (let [body (if (and (seq? body) (= 'fn (first body)))
+               body
+               `(rhs-substitutor '~body))]
+    `(alter-var-root #'rules assoc '~pattern ~body)))
 
 (defmacro defrules [rule-name & bodies]
   (let [bodies (remove string? bodies)
@@ -20,7 +29,6 @@
                 [a b] (if (= '=== op)
                         [[a b] [b a]] [[a b]])]
             `(defrule ~(gensym (name rule-name)) ~a ~b)))))
-
 
 (defrules logical-operators
   (or ?a ?a)         ?a
@@ -43,6 +51,14 @@
 
   ;; https://github.com/egraphs-good/egg/blob/main/tests/prop.rs
 
+(defrules constant-folding
+  (+ number/?a number/?b)    ==> (fn [m] (+ (m '?a) (m '?b)))
+  (- number/?a number/?b)    ==> (fn [m] (- (m '?a) (m '?b)))
+  (/ number/?a number/?b)    ==> (fn [m] (/ (m '?a) (m '?b)))
+  (* number/?a number/?b)    ==> (fn [m] (* (m '?a) (m '?b)))
+  (pow number/?a number/?b)  ==> (fn [m] (Math/pow (m '?a) (m '?b)))
+  (= number/?a number/?b)    ==> (fn [m] (= (m '?a) (m '?b)))
+  (< number/?a number/?b)    ==> (fn [m] (< (m '?a) (m '?b))))
 
 (defrules logical-laws
   ;; De Morgan
@@ -66,49 +82,51 @@
 
 
 (defrules basic-algebra
-    (* ?a ?b)        (* ?b ?a)
-    (* 0 ?a)         0
-    (* 1 ?a)         ?a
-    (* ?a (* ?b ?c)) (* (* ?a ?b) ?c)
+  (* ?a ?b)        (* ?b ?a)
+  (* 0 ?a)         0
+  (* 1 ?a)         ?a
+  (* ?a (* ?b ?c)) (* (* ?a ?b) ?c)
 
-    (+ ?a ?b)        (+ ?b ?a)               ;; commutative
-    (+ ?a (+ ?b ?c)) (+ (+ ?a ?b) ?c)
-    (+ 0 ?a)         ?a                      ;; null elem
-    (* (+ ?a ?b) ?c) (+ (* ?a ?c) (* ?b ?c)) ;; distributive
-    (+ (* ?a ?c) (* ?b ?c)) (* (+ ?a ?b) ?c) ;; factor
+  (+ ?a ?b)        (+ ?b ?a)               ;; commutative
+  (+ ?a (+ ?b ?c)) (+ (+ ?a ?b) ?c)
+  (+ 0 ?a)         ?a                      ;; null elem
+  (* (+ ?a ?b) ?c) (+ (* ?a ?c) (* ?b ?c)) ;; distributive
+  (+ (* ?a ?c) (* ?b ?c)) (* (+ ?a ?b) ?c) ;; factor
 
     ;; subtraction
-    (- ?a ?b)         (+ ?a (* -1 ?b))
-    (+ ?a (* -1 ?b))  (- ?a ?b)
-    (- ?a ?a)         0
+  (- ?a ?b)         (+ ?a (* -1 ?b))
+  (+ ?a (* -1 ?b))  (- ?a ?b)
+  (- ?a ?a)         0
 
     ;; division
   ;; (/ ?a ?a)        1 ONLY IF ?a!=0
 
-    (/ (+ ?a ?b) ?c) (+ (/ ?a ?c) (/ ?b ?c))
+  (/ (+ ?a ?b) ?c) (+ (/ ?a ?c) (/ ?b ?c))
 
     ;; constants
-    (+ ?a ?a)        (* 2 ?a)
+  (+ ?a ?a)        (* 2 ?a)
 
     ;; power
-    (* ?x ?x) (pow ?x 2)
-    (pow ?x 2) (* ?x ?x)
-    (pow ?x 1) ?x
-    (pow ?x 0) 1
+  (* ?x ?x) (pow ?x 2)
+  (pow ?x 2) (* ?x ?x)
+  (pow ?x 1) ?x
+  (pow ?x 0) 1
 
     ;; TODO: maybe do some integration as well here?
 
     ;; 
-    (sqrt ?x)        (pow x (/ 1 2))
-    (/ ?x (sqrt ?x)) (sqrt ?x)
+  (sqrt ?x)        (pow x (/ 1 2))
+  (/ ?x (sqrt ?x)) (sqrt ?x)
+
+  (pow (* ?a ?b) ?c) (* (pow ?a ?c) (pow ?b ?c))
    ;; TODO: do we need both directions?
-    )
+  )
 
 (defrules equivalence-relation
   (= ?a ?a)                 ==> true      ;; reflexive
   (= ?a ?b)                 ==> (= ?b ?a) ;; symmetric
   (and (= ?a ?b) (= ?b ?c)) ==> (= ?a ?c) ;; transitive
-  
+
   ;;  equivalence should not be used for logical functions!
   ;;  this is because logical equivalence is not transitive!
   ; (= true ?a)               ==> ?a
@@ -117,18 +135,18 @@
   )
 
 (defrules equation-simplify
-    (= (+ ?a ?b) (+ ?a ?c)) ==> (= ?b ?c)
-    (= (- ?a ?c) (- ?b ?c)) ==> (= ?a ?b)
+  (= (+ ?a ?b) (+ ?a ?c)) ==> (= ?b ?c)
+  (= (- ?a ?c) (- ?b ?c)) ==> (= ?a ?b)
 
-    (= (/ ?a ?x) (/ ?b ?x)) ==> (= ?a ?b)
-    (= (* ?a ?x) (* ?b ?x)) ==> (or (= 0 ?x) (= ?a ?b))
+  (= (/ ?a ?x) (/ ?b ?x)) ==> (= ?a ?b)
+  (= (* ?a ?x) (* ?b ?x)) ==> (or (= 0 ?x) (= ?a ?b))
 
-    (= 0 (* ?a ?b))         ==> (or (= 0 ?a) (= 0 ?b))
-    (= 0 (/ ?a ?b))         ==> (= 0 ?a)
-    (/ 0 ?x)                ==> 0
+  (= 0 (* ?a ?b))         ==> (or (= 0 ?a) (= 0 ?b))
+  (= 0 (/ ?a ?b))         ==> (= 0 ?a)
+  (/ 0 ?x)                ==> 0
 
-    (= 1 (* ?x ?x))         ==> (or (= 1 ?x) (= -1 ?x))
-    (= (* ?x ?x) ?x)        ==> (or (= 1 ?x) (= 0 ?x)))
+  (= 1 (* ?x ?x))         ==> (or (= 1 ?x) (= -1 ?x))
+  (= (* ?x ?x) ?x)        ==> (or (= 1 ?x) (= 0 ?x)))
 
 (defrules relations
   (< ?a ?b)       === (> ?b ?a)

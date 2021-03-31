@@ -1,6 +1,7 @@
 (ns cogent.core-test
   (:require [clojure.test :refer :all]
-            [cogent.core :refer :all]))
+            [cogent.core :refer :all]
+            [cogent.matcher :refer :all]))
 
 (defn- proj [x] (select-keys x [:enode->eclass :eclass->enodes]))
 
@@ -98,7 +99,7 @@
   )
 
 (deftest test-tautology
-    (is (tautology? '(or x (and true (not x))))))
+  (time (is (tautology? '(or x (and true (not x)))))))
 
 
 #_

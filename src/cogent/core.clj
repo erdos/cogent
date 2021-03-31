@@ -1,6 +1,6 @@
 (ns cogent.core
-  (:require [clojure.walk]
-            [cogent.helper :refer :all]
+  (:require [cogent.helper :refer :all]
+            [cogent.matcher :refer :all]
             [cogent.rules :as rules]
             [cogent.union-find :as union-find]))
 
@@ -23,11 +23,6 @@
          :enode->eclass {}
          :eclass->enodes {}))
 
-
-(defn- rhs-substitute [rhs subst]
-  (assert (map? subst))
-  (clojure.walk/postwalk-replace subst rhs))
-
 ;; return tuple if [graph class]
 (defn add-canonical [egraph expression]
   ;; expression: vector -> canonical, seq: fncall, scalar: canonical
@@ -48,39 +43,6 @@
              (update :eclass->enodes assoc new-class #{canonical})
              (update :enode->eclass assoc canonical new-class))
          new-class]))))
-
-;; returns list of tuples of [{variable eclass}] where substitutions is a map of var name to canonical id
-(defn ematch [egraph pattern]
-  (letfn [(match-expr*
-            [pattern class]
-            (mapcat (partial match-expr pattern) (get-in egraph [:eclass->enodes class])))
-          (match-expr
-            [pattern expression]
-            (cond
-              (and (symbol? pattern) (.startsWith (name pattern) "?"))
-              (case (namespace pattern)
-                "number"
-                (when (number? expression)
-                  [{(symbol (name pattern)) expression}])
-
-                "symbol"
-                (when (symbol? expression)
-                  [{(symbol (name pattern)) expression}])
-
-                nil
-                [{pattern expression}])
-
-              (and (seq? pattern) (vector? expression) (= (count pattern) (count expression)))
-              (->> (map match-expr* pattern expression)
-                   (apply cartesian)
-                   (keep (partial apply merge-disjunct)))
-
-              (= pattern expression)
-              [{}]))]
-    (for [node (keys (:enode->eclass egraph))
-          var-map (match-expr pattern node)]
-      [var-map (get-in egraph [:enode->eclass node])])))
-
 
 (defn- fix-unions-step [egraph]
   (->>
@@ -141,21 +103,19 @@
     ;; every referenced item is found.
     (assert (contains? (:eclass->enodes egraph) v)
             (str "Unexpected id: " v " << " (union-find/find-class egraph v))))
-
   (reduce (fn [egraph [eclass value]]
             (let [[egraph new-id] (add-canonical egraph value)
                   [egraph _ _] (union-find/merge-set egraph new-id eclass)]
               egraph))
           egraph
-          (for [[lhs rhs]      *rules*
-                [subst eclass] (ematch egraph lhs)
-                :let [value (rhs-substitute rhs subst)]]
-            [eclass value])))
+          (for [[eclass rhs substitutions] (ematch-rules *rules* egraph)]
+            [eclass (rhs substitutions)])))
 
 
 (defn- check-graph-contradiction [egraph]
   ;; if different scalars are in the same class
-  (doseq [values (vals (:eclass->enodes egraph))]
+  (doseq [values (vals (:eclass->enodes egraph))
+          :let [values (set (for [v values] (if (number? v) (double v) v)))]]
     (when (< 1 (countif scalar? values))
       (debug egraph)
       (throw (ex-info "Contradiction was found!" {:scalars (filter scalar? values)}))))
@@ -212,7 +172,7 @@
 
 
 (defn map->egraph [m]
-  (reduce-kv (fn [m class nodes] 
+  (reduce-kv (fn [m class nodes]
                (reduce (fn [m node] (update m :enode->eclass assoc node class)) m nodes))
              {:eclass->enodes m
               ::union-find/parents (atom (vec (range (count m))))}
