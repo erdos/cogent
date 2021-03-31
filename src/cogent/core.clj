@@ -23,6 +23,17 @@
          :enode->eclass {}
          :eclass->enodes {}))
 
+
+(defn- add-enode [egraph eclass enode]
+  (-> egraph
+      (update :eclass->enodes update eclass (fnil conj #{}) enode)
+      (update :enode->eclass assoc enode eclass)))
+
+
+(defn- get-eclass [egraph enode]
+  (get (:enode->eclass egraph) enode))
+
+
 ;; return tuple if [graph class]
 (defn add-canonical [egraph expression]
   ;; expression: vector -> canonical, seq: fncall, scalar: canonical
@@ -34,15 +45,18 @@
                   [egraph []]
                   expression)
           [egraph expression])]
-    (if-let [existing-class (get (:enode->eclass egraph) canonical)]
+    (if-let [existing-class (get-eclass egraph canonical)]
       [egraph existing-class] ;; (union-find/find-class egraph existing-class)
       (let [[egraph new-class] (union-find/make-set egraph)]
-        (assert (not (contains? (:eclass->enodes egraph) new-class)))
-        (assert (not (contains? (:enode->eclass egraph) canonical)))
-        [(-> egraph
-             (update :eclass->enodes assoc new-class #{canonical})
-             (update :enode->eclass assoc canonical new-class))
+        [(add-enode egraph new-class canonical)
          new-class]))))
+
+
+(defn- add-canonical-id [egraph value eclass]
+  (let [[egraph new-id] (add-canonical egraph value)
+        [egraph _ _] (union-find/merge-set egraph new-id eclass)]
+    egraph))
+
 
 (defn- fix-unions-step [egraph]
   (->>
@@ -80,13 +94,11 @@
                    (let [new-node  (rename-node old-node)
                          new-class (rename-class old-class)]
                      (assert (integer? new-class))
-                     (when-let [existing-class (get (:enode->eclass new-graph) new-node)]
+                     (when-let [existing-class (get-eclass new-graph new-node)]
                        ;; each node should be uniquely mapped...
                        (assert (= existing-class new-class)
                                (str new-node " : "  existing-class " vs " new-class)))
-                     (-> new-graph
-                         (update :eclass->enodes update new-class (fnil conj #{}) new-node)
-                         (update :enode->eclass assoc new-node new-class))))
+                     (add-enode new-graph new-class new-node)))
                  new-graph
                  (:enode->eclass egraph)))))
 
@@ -94,6 +106,7 @@
 (def ^:private kill (atom 0))
 
 
+;; this step is slow.
 (defn- equality-saturation-step [egraph]
   (assert (< (swap! kill inc) 100) "Too many iterations!")
   (doseq  [[class nodes] (:eclass->enodes egraph)
@@ -104,15 +117,14 @@
     (assert (contains? (:eclass->enodes egraph) v)
             (str "Unexpected id: " v " << " (union-find/find-class egraph v))))
   (reduce (fn [egraph [eclass value]]
-            (let [[egraph new-id] (add-canonical egraph value)
-                  [egraph _ _] (union-find/merge-set egraph new-id eclass)]
-              egraph))
+            (add-canonical-id egraph value eclass))
           egraph
           (for [[eclass rhs substitutions] (ematch-rules *rules* egraph)]
             [eclass (rhs substitutions)])))
 
 
 (defn- check-graph-contradiction [egraph]
+  ; (debug egraph)
   ;; if different scalars are in the same class
   (doseq [values (vals (:eclass->enodes egraph))
           :let [values (set (for [v values] (if (number? v) (double v) v)))]]
@@ -138,6 +150,7 @@
     (apply println "-" k "\t:"  (sort-by (juxt vector? boolean? number? symbol? identity) v)))
   (println "---"))
 
+
 (defn congruent?
   ([form1 form2]
    (let [egraph (-> empty-graph
@@ -154,6 +167,7 @@
              (debug egraph)
              false)))))
 
+
 (defn tautology? [expression]
   (congruent? expression 'true))
 
@@ -169,12 +183,4 @@
                    (let [v (get (first x) '?x)]
                      (when (scalar? v)
                        (first x))))))))
-
-
-(defn map->egraph [m]
-  (reduce-kv (fn [m class nodes]
-               (reduce (fn [m node] (update m :enode->eclass assoc node class)) m nodes))
-             {:eclass->enodes m
-              ::union-find/parents (atom (vec (range (count m))))}
-             m))
 

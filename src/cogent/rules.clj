@@ -80,34 +80,46 @@
   (=> ?a ?b)     ==>   (or (not ?a) ?b)
   (<=> ?a ?b)    ==>   (or (and ?a ?b) (and (not ?a) (not ?b))))
 
+(defrules basic-algebra-multiplication
+  (* ?a ?b)        ==>  (* ?b ?a)               ;; commutative
+  (* 0 ?a)         ==>  0                       ;; null elem
+
+  (* 1 ?a)         ==>  ?a                      ;; identity
+  (* ?a (* ?b ?c)) ==>  (* (* ?a ?b) ?c) ;; associative
+  )       
+
+(defrules basic-algebra-addition
+  (+ ?a ?b)         ==> (+ ?b ?a)               ;; commutative
+  ;; TODO: this breaks me!
+  (+ nonzero/?a (+ nonzero/?b nonzero/?c))  ==> (+ (+ ?a ?b) ?c)        ;; associative
+  (+ 0 ?a)          ==> ?a                      ;; null elem
+  )
+
+(defrules addition-multiplication-distributivity
+  (* (+ ?a ?b) ?c)        ==> (+ (* ?a ?c) (* ?b ?c)) ;; distributive
+  ;(+ (* ?a ?c) (* ?b ?c)) ==> (* (+ ?a ?b) ?c) ;; factor 
+  )
 
 (defrules basic-algebra
-  (* ?a ?b)        (* ?b ?a)
-  (* 0 ?a)         0
-  (* 1 ?a)         ?a
-  (* ?a (* ?b ?c)) (* (* ?a ?b) ?c)
-
-  (+ ?a ?b)        (+ ?b ?a)               ;; commutative
-  (+ ?a (+ ?b ?c)) (+ (+ ?a ?b) ?c)
-  (+ 0 ?a)         ?a                      ;; null elem
-  (* (+ ?a ?b) ?c) (+ (* ?a ?c) (* ?b ?c)) ;; distributive
-  (+ (* ?a ?c) (* ?b ?c)) (* (+ ?a ?b) ?c) ;; factor
 
     ;; subtraction
-  (- ?a ?b)         (+ ?a (* -1 ?b))
-  (+ ?a (* -1 ?b))  (- ?a ?b)
-  (- ?a ?a)         0
+  ;(- ?a ?b)         (+ ?a (* -1 ?b))
+  ;(+ ?a (* -1 ?b))  (- ?a ?b)
+  ;(- ?a ?a)         0
 
     ;; division
   ;; (/ ?a ?a)        1 ONLY IF ?a!=0
 
-  (/ (+ ?a ?b) ?c) (+ (/ ?a ?c) (/ ?b ?c))
+  ; (/ (+ ?a ?b) ?c) (+ (/ ?a ?c) (/ ?b ?c))
 
     ;; constants
-  (+ ?a ?a)        (* 2 ?a)
+  ;; (+ nonzero/?a ?a)        (* 2 ?a)
+  )
 
-    ;; power
-  (* ?x ?x) (pow ?x 2)
+#_
+(defrules power-fn
+  ;; power
+  ; (* ?x ?x) (pow ?x 2)
   (pow ?x 2) (* ?x ?x)
   (pow ?x 1) ?x
   (pow ?x 0) 1
@@ -172,28 +184,24 @@
   ;; (sqrt (pow ?x 2))     ==> (abs ?x)
     )
 
-#_(defrules symbolic-differentiation
-      ;; https://github.com/egraphs-good/egg/blob/main/tests/math.rs
-    ;; TODO: differentiation
-    ;; (d ?x ?x) 1 ;; if symbol
-    ;; (d ?x ?x) 0 ;; f  c onstant or distinct var.
-    ;; (d ?x (+ ?a ?b)) (+ (d ?x ?a) (d ?x ?b))
+(defrules symbolic-differentiation
+  ;; https://github.com/egraphs-good/egg/blob/main/tests/math.rs
 
-    (d ?x ?x)        ==> 1
-    (d ?x ?symbol/y) ==> (fn [?x ?y] (when (not= ?x ?y)));; if dinstinct!!
+  (d symbol/?x symbol/?y) ==> (fn [m] (if (= (m '?x) (m '?y)) 1 0))
+  (d ?x number/?y)        ==> 0
 
-    (d ?x (+ ?a ?b)) ==> (+ (d ?x ?a) (d ?x ?b))
-    (d ?x (* ?a ?b)) ==> (+ (* (d ?x ?a) ?b) (* ?a (d ?x ?b)))
+  (d ?x (+ ?a ?b)) ==> (+ (d ?x ?a) (d ?x ?b))
+  (d ?x (* ?a ?b)) ==> (+ (* (d ?x ?a) ?b) (* ?a (d ?x ?b)))
 
-    "chain rule"
-    (d ?x (exp ?y))  ==> (* (exp ?y) (d ?x ?y))
-    (d ?x (log ?y))  ==> (/ (d ?x ?y) ?y)
+  "chain rule"
+  (d ?x (exp ?y))  ==> (* (exp ?y) (d ?x ?y))
+  (d ?x (log ?y))  ==> (/ (d ?x ?y) ?y)
 
 ;  (d ?x (pow ?a number/?b)) ==> 
 
   ;(d ?x (exp ?a))  ==> (exp ?a)
   ;(d ?x (log ?a))  ==> (/ 1 ?a)
-    )
+  )
 
 
 #_(defrules trigonometry
@@ -224,5 +232,5 @@
 
 
 (defrules quadratic-solver
-  (= ?a (pow ?b 2))     => (or (= ?b (pow ?a 1/2))
-                               (= ?b (* -1 (pow ?a 1/2)))))
+  (= ?a (pow ?b 2))     ==> (or (= ?b (pow ?a 1/2))
+                                (= ?b (* -1 (pow ?a 1/2)))))

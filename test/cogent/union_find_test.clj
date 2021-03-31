@@ -3,7 +3,7 @@
             [cogent.union-find :refer :all]))
 
 
-(deftest test
+(deftest test-1
   (let [e        empty-set
         [e id0]  (make-set e)
         _        (assert (= 0 id0))
