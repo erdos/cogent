@@ -222,3 +222,7 @@
     ==>
     (= (+ (* ?a (pow (+ x (/ ?b (* 2 ?a))) 2)) (- ?c (/ (pow ?b 2) (* 4 ?a)))) 0))
 
+
+(defrules quadratic-solver
+  (= ?a (pow ?b 2))     => (or (= ?b (pow ?a 1/2))
+                               (= ?b (* -1 (pow ?a 1/2)))))
