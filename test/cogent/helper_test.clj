@@ -16,4 +16,4 @@
 
 (deftest scalar?-test
   (is (every? scalar? [-1 0 1 2.3 true false]))
-  (is (not-any? scalar? '[a :kw x/y nil])))
+  (is (not-any? scalar? '[a :kw x/y nil {} [] (a b c) (1)])))

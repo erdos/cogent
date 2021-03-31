@@ -91,19 +91,28 @@
 (deftest test-solve
   (is (= '[{?x true}] (solve '(= true (and true x))))))
 
-(deftest test-simplify
-
-  ;; TODO: divide both sides by X and  give conditionals
-  #_(is (= '[{?x 0} {?x 1}]
-           (solve '(= true (= x (* x x)))))))
-
-
 #_
 (deftest test-diff-congruent
   (is (congruent? '(d x (+ (pow x 4) 3))
                   '(* 4 (pow x 3))))
   )
 
-#_
 (deftest test-tautology
     (is (tautology? '(or x (and true (not x))))))
+
+
+#_
+(def problem-01
+  (map->egraph
+   '{0 #{or}
+     1 #{x}
+     2 #{and}
+     3 #{true [0 1 5] [0 5 1] [2 3 3]}
+     4 #{not}
+     5 #{[4 1] [2 5 3] [2 3 5] [6 7 1] [6 1 7] [0 7 8] [0 8 7]}, ;; (not x)
+     6 #{=}
+     7 #{false}
+     8 #{[2 5 5]}, ;; (not x) this is required
+     }))
+;; (assert (empty? (ematch  problem-01 '(and (= ?a ?b) (= ?b ?c)))))
+

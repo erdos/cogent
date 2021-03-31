@@ -23,7 +23,7 @@
               make-set first
               make-set first
               (merge-set 0 1) first
-              (merge-set  1 0) first)]
+              (merge-set 1 0) first)]
     ;; circular reference
     (is (= 0 (find-class e 0)))
     (is (= 0 (find-class e 1)))
