@@ -234,3 +234,12 @@
 (defrules quadratic-solver
   (= ?a (pow ?b 2))     ==> (or (= ?b (pow ?a 1/2))
                                 (= ?b (* -1 (pow ?a 1/2)))))
+
+
+(defrules ski-combinator-calculus
+  (app I ?x)  ==> ?x
+  (app (app K ?x) ?y)  ==> ?x
+  (app (app (app S ?x) ?y) ?z) ==> (app (app ?x ?z) (app ?y ?z))
+  ;; fn composition is associative
+  (app ?a (app ?b ?c)) <==> (app (app ?a ?b) ?c))
+
