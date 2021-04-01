@@ -2,6 +2,9 @@
 
 A small rule engine with Equality Saturation<sup>[1]</sup> in Clojure.
 
+![example workflow](https://github.com/erdos/cogent/actions/workflows/clojure.yml/badge.svg)
+
+
 ## Usage
 
 1. Install [Leiningen](https://leiningen.org/)
