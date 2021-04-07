@@ -3,7 +3,7 @@
 A small and naive rule engine with Equality Saturation<sup>[1]</sup> in Clojure.
 
 ![example workflow](https://github.com/erdos/cogent/actions/workflows/clojure.yml/badge.svg)
-[![contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg?style=flat)](https://github.com/erdos/stencil/issues)
+[![contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg?style=flat)](https://github.com/erdos/cogent/issues)
 [![EPL 2.0](https://img.shields.io/badge/License-EPL%202.0-red.svg)](https://www.eclipse.org/legal/epl-2.0/)
 
 
