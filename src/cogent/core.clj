@@ -4,13 +4,6 @@
             [cogent.rules :as rules]
             [cogent.union-find :as union-find]))
 
-;;
-;; See: egg: Fast and Extensible Equality Saturation
-;; https://arxiv.org/pdf/2004.03082.pdf
-;;
-;;
-;; Todo: check Tarjan's union find algorithm
-;; 
 
 (declare debug)
 
@@ -23,6 +16,10 @@
          :enode->eclass {}
          :eclass->enodes {}))
 
+(defn egraph? [x]
+  (and (map? x)
+       (contains? x :enode->eclass)
+       (contains? x :eclass->enodes)))
 
 (defn- add-enode [egraph eclass enode]
   (-> egraph
@@ -123,20 +120,20 @@
             [eclass (rhs substitutions)])))
 
 
-(defn- check-graph-contradiction [egraph]
-  ; (debug egraph)
+(defn- check-graph-inconsistency [egraph]
+  ;; (debug egraph)
   ;; if different scalars are in the same class
   (doseq [values (vals (:eclass->enodes egraph))
           :let [values (set (for [v values] (if (number? v) (double v) v)))]]
     (when (< 1 (countif scalar? values))
       (debug egraph)
-      (throw (ex-info "Contradiction was found!" {:scalars (filter scalar? values)}))))
+      (throw (ex-info "Inconsistency was found!" {:scalars (filter scalar? values)}))))
   egraph)
 
 
 (defn graph-equality-saturation [egraph]
   (reset! kill 0)
-  (fixpt (comp check-graph-contradiction
+  (fixpt (comp check-graph-inconsistency
                rebuild
                equality-saturation-step)
          egraph))
@@ -170,6 +167,9 @@
 
 (defn tautology? [expression]
   (congruent? expression 'true))
+
+(defn contradiction? [expression]
+  (congruent? expression 'false))
 
 ; (def ^:private logical-ops '#{not and or = < >})
 

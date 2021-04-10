@@ -24,7 +24,7 @@
           m ms))
 
 
-(defn scalar? [x] (or (number? x) (boolean? x) ('#{TRUE FALSE T F} x)))
+(defn scalar? [x] (or (number? x) (boolean? x)))
 
 ;; faster mapv
 (defn mapv' [f ^clojure.lang.IPersistentVector v]

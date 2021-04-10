@@ -105,3 +105,13 @@
 (deftest test-tautology
   (time (is (tautology? '(or x (and true (not x)))))))
 
+(deftest test-contradiction
+  (is (contradiction? '(= 1 2)))
+  ; (is (contradiction? '(and (< x 0) (> x 0))))
+  )
+
+(deftest egraph?-test
+  (is (not (egraph? 1)))
+  (is (not (egraph? nil)))
+  (is (not (egraph? {})))
+  (is (egraph? empty-graph)))
