@@ -8,7 +8,7 @@
 
 (defmethod symbol-check "number" [_ value] (number? value))
 (defmethod symbol-check "symbol" [_ value] (symbol? value))
-(defmethod symbol-check "nonzero" [_ value] (not= 0 value))
+(defmethod symbol-check "nonzero" [_ value] (and (number? value) (not= 0 value)))
 
 (defn- variable-pattern? [pattern]
   (and (symbol? pattern) (.startsWith (name pattern) "?")))
@@ -39,7 +39,7 @@
 (defn ematch-rules [rules egraph]
   (for [[lhs rhs]      rules
         [substitutions eclass] (ematch egraph lhs)]
-    [eclass (rhs substitutions)]))
+    [eclass (rhs substitutions) #_ (do (println :todo lhs rhs substitutions))]))
 
 ;; rules can be used to pre-calculate matcher truee.
 #_(defn preprocess-rules [rules]

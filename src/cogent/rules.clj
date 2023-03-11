@@ -141,9 +141,9 @@
 
   ;;  equivalence should not be used for logical functions!
   ;;  this is because logical equivalence is not transitive!
-  ; (= true ?a)               ==> ?a
-  ; (= true false)            ==> false
-  ; (= false ?a)              === (not ?a)
+  (= true ?a)               ==> ?a
+  (= true false)            ==> false
+  ;(= false ?a)              === (not ?a)
   )
 
 (defrules equation-simplify

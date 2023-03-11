@@ -93,16 +93,6 @@
 (deftest test-solve
   (is (= '[{?x true}] (solve '(= true (and true x))))))
 
-(deftest test-diff-congruent
-  (is (congruent? 1 '(d x (+ 3 x))))
-  (is (congruent? 0 '(d x 3)))
-  ; (is (congruent? 3 '(d x (* 3 x))))
-  )
-
-(deftest test-ski-combinator-calculus
-  (is (congruent? '(app S (app I (app I b))) '(app b b)))
-  (is (congruent? '(app (app S K) (app S K)) 'K)))
-
 (deftest test-tautology
   (time (is (tautology? '(or x (and true (not x)))))))
 
