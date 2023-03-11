@@ -1,11 +1,14 @@
 (ns cogent.matcher
-  (:require [cogent.helper :refer :all]))
+  (:require [cogent.egraph :refer :all]
+            [cogent.helper :refer :all]))
 
-(def symbol-guard
-  {nil       (constantly true)
-   "number"  number?
-   "symbol"  symbol?
-   "nonzero" (partial not= 0)})
+(defmulti symbol-check (fn [symbol _] (namespace symbol)))
+
+(defmethod symbol-check nil [_ _] true)
+
+(defmethod symbol-check "number" [_ value] (number? value))
+(defmethod symbol-check "symbol" [_ value] (symbol? value))
+(defmethod symbol-check "nonzero" [_ value] (not= 0 value))
 
 (defn- variable-pattern? [pattern]
   (and (symbol? pattern) (.startsWith (name pattern) "?")))
@@ -13,13 +16,13 @@
 ;; returns list of tuples of [{variable eclass}] where substitutions is a map of var name to canonical id
 (defn ematch [egraph pattern]
   (letfn [(match-expr* [pattern class]
-            (mapcat (partial match-expr pattern) (get-in egraph [:eclass->enodes class])))
+            (mapcat (partial match-expr pattern)
+                    (get-enodes egraph class)))
           (match-expr [pattern expression]
             (cond
               (variable-pattern? pattern)
-              (let [guard (symbol-guard (namespace pattern))]
-                (when (guard expression)
-                  [{(symbol (name pattern)) expression}]))
+              (when (symbol-check pattern expression)
+                [{(symbol (name pattern)) expression}])
 
               (and (seq? pattern) (vector? expression) (= (count pattern) (count expression)))
               (->> (map match-expr* pattern expression)

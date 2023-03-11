@@ -1,5 +1,6 @@
 (ns cogent.core-test
   (:require [clojure.test :refer :all]
+            [cogent.egraph :refer :all]
             [cogent.core :refer :all]
             [cogent.matcher :refer :all]))
 
