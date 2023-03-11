@@ -39,7 +39,7 @@
 (defn ematch-rules [rules egraph]
   (for [[lhs rhs]      rules
         [substitutions eclass] (ematch egraph lhs)]
-    [eclass rhs substitutions]))
+    [eclass (rhs substitutions)]))
 
 ;; rules can be used to pre-calculate matcher truee.
 #_(defn preprocess-rules [rules]

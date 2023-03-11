@@ -92,8 +92,7 @@
   (reduce (fn [egraph [eclass value]]
             (add-canonical-id egraph value eclass))
           egraph
-          (for [[eclass rhs substitutions] (ematch-rules *rules* egraph)]
-            [eclass (rhs substitutions)])))
+          (ematch-rules *rules* egraph)))
 
 
 (defn- check-graph-inconsistency [egraph]
