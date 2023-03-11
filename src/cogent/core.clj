@@ -1,7 +1,7 @@
 (ns cogent.core
   (:require [cogent.egraph :refer :all]
             [cogent.helper :refer :all]
-            [cogent.matcher :refer :all]
+            [cogent.matcher :refer [ematch ematch-rules]]
             [cogent.rules :as rules]
             [cogent.union-find :as union-find]))
 
@@ -9,25 +9,31 @@
 
 ;; return tuple if [graph class]
 (defn add-canonical [egraph expression]
-  ;; expression: vector -> canonical, seq: fncall, scalar: canonical
-  (let [[egraph canonical]
-        (if (seq? expression)
-          (reduce (fn [[egraph elems] elem]
-                    (let [[egraph elem-class] (add-canonical egraph elem)]
-                      [egraph (conj elems elem-class)]))
-                  [egraph []]
-                  expression)
-          [egraph expression])]
-    (if-let [existing-class (get-eclass egraph canonical)]
-      [egraph existing-class] ;; (union-find/find-class egraph existing-class)
-      (let [[egraph new-class] (union-find/make-set egraph)]
-        [(add-enode egraph new-class canonical)
-         new-class]))))
+  (assert (some? expression))
+  (cond
+    (instance? cogent.matcher.Unresolved expression)
+    [egraph (.class expression)]
 
+    (seq? expression)
+    (apply into-egraph
+           (reduce (fn [[egraph elems] elem]
+                     (let [[egraph elem-class] (add-canonical egraph elem)]
+                       [egraph (conj elems elem-class)]))
+                   [egraph []]
+                   expression))
 
-(defn- add-canonical-id [egraph value eclass]
-  (let [[egraph new-id] (add-canonical egraph value)
+    :else
+    (let [expression (if (instance? cogent.matcher.Resolved expression) (.value expression) expression)]
+      (into-egraph egraph expression))))
+
+(defn- add-canonical-id [egraph new-value eclass]
+  (assert egraph)
+  (assert (some? new-value))
+  (assert (integer? eclass))
+  (let [[egraph new-id] (add-canonical egraph new-value)
+        _ (assert new-id)
         [egraph _ _] (union-find/merge-set egraph new-id eclass)]
+    (assert new-id)
     egraph))
 
 
@@ -78,17 +84,8 @@
 
 (def ^:private kill (atom 0))
 
-
-;; this step is slow.
 (defn- equality-saturation-step [egraph]
   (assert (< (swap! kill inc) 100) "Too many iterations!")
-  (doseq  [[class nodes] (:eclass->enodes egraph)
-           node nodes
-           :when (vector? node)
-           v node]
-    ;; every referenced item is found.
-    (assert (contains? (:eclass->enodes egraph) v)
-            (str "Unexpected id: " v " << " (union-find/find-class egraph v))))
   (reduce (fn [egraph [eclass value]]
             (add-canonical-id egraph value eclass))
           egraph
@@ -116,6 +113,7 @@
 
 (defn congruent?
   ([form1 form2]
+   (assert (some? form1)) (assert (some? form2))
    (let [egraph (-> empty-graph
                     (add-canonical form1) (first)
                     (add-canonical form2) (first)
@@ -141,12 +139,16 @@
 
 ;; return solutions for x
 (defn solve [form]
-  (-> empty-graph
-      (add-canonical form) (first)
-      (graph-equality-saturation)
-      (ematch '(= x ?x))
-      (->> (keep (fn [x]
-                   (let [v (get (first x) '?x)]
-                     (when (scalar? v)
-                       (first x))))))))
+  (let [egraph (-> empty-graph
+                   (add-canonical form) (first)
+                   (graph-equality-saturation))]
+    (->>
+     (ematch egraph '(= x ?x))
+     (mapcat (fn [[mapping _]]
+               (let [v (get mapping '?x)]
+                 (when (instance? cogent.matcher.Unresolved v)
+                   (->> (.class ^cogent.matcher.Unresolved v)
+                        (get-enodes egraph))))))
+     (remove vector?)
+     (set))))
 

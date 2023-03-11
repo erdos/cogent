@@ -59,19 +59,21 @@
       (is (= [[{} 1]] (ematch egraph 2)))
       (is (= [[{} 2]] (ematch egraph 'x))))
 
-    (is (= '[[{?a *} 0]
-             [{?a 2} 1]
-             [{?a x} 2]
-             [{?a [0 1 2]} 3]]
+    (is (= [[{'?a (->Unresolved 0)} 0]
+            [{'?a (->Unresolved 1)} 1]
+            [{'?a (->Unresolved 2)} 2]
+            [{'?a (->Unresolved 3)} 3]]
            (ematch egraph '?a)))
 
-    (is (= '[[{?a x} 3]] (ematch egraph '(* 2 ?a))))
-    (is (= '[[{?a 2 ?b x} 3]] (ematch egraph '(* ?a ?b))))
+    (is (= [[{'?a (->Unresolved 2)} 3]]
+           (ematch egraph '(* 2 ?a))))
+    (is (= [[{'?a (->Unresolved 1) '?b (->Unresolved 2)} 3]]
+           (ematch egraph '(* ?a ?b))))
 
     (testing "Variable is already used and bound to different value"
       (is (= '[] (ematch egraph '(* ?a ?a)))))
     (testing "Variable is already used and bound to same value"
-      (is (= '[[{?a x} 2]]
+      (is (= [[{'?a (->Unresolved 1)} 2]]
              (ematch (initial-egraph '(* x x)) '(* ?a ?a)))))))
 
 (deftest congruence-test
@@ -91,7 +93,7 @@
   (is (congruent? '(= 3 x) '(= (+ 3 r) (+ r x)))))
 
 (deftest test-solve
-  (is (= '[{?x true}] (solve '(= true (and true x))))))
+  (is (= '#{true} (solve '(= true (and true x))))))
 
 (deftest test-tautology
   (time (is (tautology? '(or x (and true (not x)))))))

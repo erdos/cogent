@@ -17,7 +17,7 @@
 
 (defn merge-set [data old-parent new-parent]
   (assert (map? data))
-  (assert (integer? old-parent))
+  (assert (integer? old-parent) (str "Not int " (pr-str old-parent)))
   (assert (integer? new-parent))
   (if (= old-parent new-parent)
     [data old-parent]

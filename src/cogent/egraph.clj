@@ -24,6 +24,19 @@
 (defn get-enodes [egraph eclass]
   (get (:eclass->enodes egraph) eclass))
 
+(defn get-all-eclasses [egraph]
+  (keys (:eclass->enodes egraph)))
+
+;; return tuple of [updated-egraph new-class-id]
+(defn into-egraph [egraph expression]
+  (assert (egraph? egraph))
+  (assert (some? expression) "into-egraph missing expression")
+  (if-let [existing-class (get-eclass egraph expression)]
+    [egraph existing-class] ;; (union-find/find-class egraph existing-class)
+    (let [[egraph new-class] (union-find/make-set egraph)]
+      [(add-enode egraph new-class expression)
+       new-class])))
+
 (defn debug [egraph]
   (println "Egraph")
   (println (union-find/all-parents egraph))

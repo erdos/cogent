@@ -6,12 +6,13 @@
 
 (def rules (array-map))
 
-(declare ?a ?b ?c ?d ?x ?y ==>)
+(declare ?a ?b ?c ?d ?x ?y ==> ===)
 
 (defn- rhs-substitutor [pattern]
-  (fn [substitutions]
-    (assert (map? substitutions))
-    (clojure.walk/postwalk-replace substitutions pattern)))
+  (-> (fn [substitutions]
+        (assert (map? substitutions))
+        (clojure.walk/postwalk-replace substitutions pattern))
+      (with-meta {::rhs pattern})))
 
 (defmacro defrule [rule-name pattern body]
   (let [body (if (and (seq? body) (= 'fn (first body)))
@@ -31,33 +32,35 @@
             `(defrule ~(gensym (name rule-name)) ~a ~b)))))
 
 (defrules logical-operators
-  (or ?a ?a)         ?a
-  (or ?a ?b)         (or ?b ?a)
-  (or ?a (or ?b ?c)) (or (or ?a ?b) ?c)
-  (or ?a (not ?a))   true
-  (or ?a true)       true
-  (or ?a false)      ?a
+  (or ?a ?a)         ==> ?a
+  (or ?a ?b)         ==> (or ?b ?a)
+  (or ?a (or ?b ?c)) === (or (or ?a ?b) ?c)
+  (or ?a (not ?a))   ==> true
+  (or true ?a)       ==> true
+  (or false ?a)      ==> ?a
 
-  (and ?a ?a)          ?a
-  (and ?a ?b)          (and ?b ?a)
-  (and ?a (and ?b ?c)) (and (and ?a ?b) ?c)
-  (and ?a (not ?a))    false
-  (and ?a true)        ?a
-  (and ?a false)       false
+  (and ?a ?a)          ==> ?a
+  (and ?a ?b)          ==> (and ?b ?a)
+  (and ?a (and ?b ?c)) === (and (and ?a ?b) ?c)
+  (and ?a (not ?a))    ==> false
+  (and true ?a)        ==> ?a
+  (and false ?a)       ==> false
 
-  (not true)   false
-  (not false)  true
-  (not (not ?a)) ?a)
+  (not true)           ==> false
+  (not false)          ==> true
+  (not (not ?a))       ==> ?a)
 
   ;; https://github.com/egraphs-good/egg/blob/main/tests/prop.rs
 
 (defrules constant-folding
-  (+ number/?a number/?b)    ==> (fn [m] (+ (m '?a) (m '?b)))
-  (- number/?a number/?b)    ==> (fn [m] (- (m '?a) (m '?b)))
-  (/ number/?a number/?b)    ==> (fn [m] (/ (m '?a) (m '?b)))
-  (* number/?a number/?b)    ==> (fn [m] (* (m '?a) (m '?b)))
+  ;(+ number/?a number/?b)    ==> (fn [m] (+ (m '?a) (m '?b)))
+  ;(- number/?a number/?b)    ==> (fn [m] (- (m '?a) (m '?b)))
+  ; (/ number/?a number/?b)    ==> (fn [m] (/ (m '?a) (m '?b)))
+  (* number/?a number/?b)    ==> (fn [m] 
+                                   ;(println :multiply m)
+                                   (* (.value ^cogent.matcher.Unresolved (m '?a)) (.value (m '?b))))
   (pow number/?a number/?b)  ==> (fn [m] (Math/pow (m '?a) (m '?b)))
-  (= number/?a number/?b)    ==> (fn [m] (= (m '?a) (m '?b)))
+  (= number/?a number/?b)    ==> (fn [m] (= (.value (m '?a)) (.value (m '?b))))
   (< number/?a number/?b)    ==> (fn [m] (< (m '?a) (m '?b))))
 
 (defrules logical-laws
@@ -91,7 +94,7 @@
 (defrules basic-algebra-addition
   (+ ?a ?b)         ==> (+ ?b ?a)               ;; commutative
   ;; TODO: this breaks me!
-  (+ nonzero/?a (+ nonzero/?b nonzero/?c))  ==> (+ (+ ?a ?b) ?c)        ;; associative
+  (+ ?a (+ ?b ?c))  ==> (+ (+ ?a ?b) ?c)        ;; associative
   (+ 0 ?a)          ==> ?a                      ;; null elem
   )
 
@@ -149,8 +152,10 @@
 (defrules equation-simplify
   (= (+ ?a ?b) (+ ?a ?c)) ==> (= ?b ?c)
   (= (- ?a ?c) (- ?b ?c)) ==> (= ?a ?b)
+  (= (- ?a ?x) (- ?a ?y)) ==> (= ?x ?y) ;; TODO: needed?
 
   (= (/ ?a ?x) (/ ?b ?x)) ==> (= ?a ?b)
+  (= (/ ?x ?a) (/ ?x ?b)) ==> (= ?a ?b) ;; TODO: needed?
   (= (* ?a ?x) (* ?b ?x)) ==> (or (= 0 ?x) (= ?a ?b))
 
   (= 0 (* ?a ?b))         ==> (or (= 0 ?a) (= 0 ?b))
@@ -164,7 +169,7 @@
   (< ?a ?b)       === (> ?b ?a)
   (<= ?a ?b)      === (or (< ?a ?b) (= ?a ?b))
   (>= ?a ?b)      === (<= ?b ?a)
-  (< ?a ?b)       === (not (=> ?a ?b))
+  (< ?a ?b)       === (not (>= ?a ?b))
   (not (= ?a ?b)) === (or (< ?a ?b) (> ?a ?b)))
 
 (defrules exponentials
