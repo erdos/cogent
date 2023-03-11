@@ -14,15 +14,18 @@
   ([as bs]    (for [a as b bs] [a b]))
   ([as bs cs] (for [a as b bs c cs] [a b c])))
 
-
-(defn merge-disjunct [m & ms]
-  (reduce (partial reduce-kv
-                   (fn [m k v]
-                     (if (and (contains? m k) (not= v (m k)))
-                       (reduced nil)
-                       (assoc m k v))))
-          m ms))
-
+;; given 2 or 3 maps, return their union if all shared keys have the same values, nil otherwise.
+(defn merge-disjunct
+  ([a b]
+   (reduce-kv
+    (fn [m k v]
+      (if (and (contains? m k) (not= v (m k)))
+        (reduced nil)
+        (assoc m k v)))
+    a b))
+  ([a b c]
+   (when-let [bc (merge-disjunct b c)]
+     (merge-disjunct bc a))))
 
 (defn scalar? [x] (or (number? x) (boolean? x)))
 

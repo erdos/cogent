@@ -120,8 +120,8 @@
                     (add-canonical form1) (first)
                     (add-canonical form2) (first)
                     (graph-equality-saturation))
-         class1 (->> (ematch egraph form1) (map second) set)
-         class2 (->> (ematch egraph form2) (map second) set)]
+         class1 (into #{} (map second) (ematch egraph form1))
+         class2 (into #{} (map second) (ematch egraph form2))]
      (or (and (= 1 (count class1))
               (= class1 class2))
          (do (println "Not equals!")
