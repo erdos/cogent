@@ -239,7 +239,14 @@
 (defrules quadratic-solver
   (= ?a (pow ?b 2))     ==> (or (= ?b (pow ?a 1/2))
                                 (= ?b (* -1 (pow ?a 1/2)))))
-
+(defrules quantors
+  (Exists ?x (or ?a ?b))  === (or (Exists ?x ?a) (Exists ?x ?b))
+  (Forall ?x (and ?a ?b)) === (and (Forall ?x ?a) (Forall ?x ?b))
+  (not (Forall ?x ?a))    === (Exists ?x (not ?a))
+  (Exists ?x false)       ==> false
+  (Exists ?x true)        ==> true
+  ;; TODO: missing laws
+  )
 
 (defrules ski-combinator-calculus
   (app I ?x)  ==> ?x
